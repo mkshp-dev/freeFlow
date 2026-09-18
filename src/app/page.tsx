@@ -19,7 +19,9 @@ import {
   ArrowRight,
   ShieldCheck,
   Zap,
-  Copy
+  Copy,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Task, Workflow, WebhookLog } from '@/types';
 
@@ -64,6 +66,7 @@ export default function Dashboard() {
   const [oauthFeedback, setOauthFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [oauthBanner, setOauthBanner] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   // New task form state
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -176,12 +179,32 @@ export default function Dashboard() {
       }
     }
 
+    // Initialize theme from document element class
+    if (typeof window !== 'undefined') {
+      const isDark = document.documentElement.classList.contains('dark');
+      setTheme(isDark ? 'dark' : 'light');
+    }
+
     // Auto-refresh webhook logs and stats every 8 seconds
     const interval = setInterval(() => {
       loadData();
     }, 8000);
     return () => clearInterval(interval);
   }, []);
+
+  // Theme toggle helper
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('theme', nextTheme);
+    } catch (_) {}
+  };
 
   // Handle task creation
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -396,19 +419,19 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Top Navigation */}
-      <header className="border-b border-slate-800/80 bg-slate-900/50 backdrop-blur sticky top-0 z-50">
+      <header className="border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/50 backdrop-blur sticky top-0 z-50 transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
               <RefreshCw className="w-5 h-5 text-white" />
             </div>
             <div>
-              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-indigo-900 via-indigo-700 to-violet-800 dark:from-white dark:via-slate-100 dark:to-slate-400 bg-clip-text text-transparent">
                 freeFlow
               </span>
-              <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
                 Todoist Habit Engine
               </span>
             </div>
@@ -416,38 +439,52 @@ export default function Dashboard() {
 
           <div className="flex items-center gap-3">
             {/* Status Pills */}
-            <div className="flex items-center gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="hidden sm:flex items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
                 Supabase
               </span>
               <span
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${
                   settings.hasToken
-                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                    ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
                 }`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${settings.hasToken ? 'bg-indigo-400' : 'bg-amber-400'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${settings.hasToken ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-amber-500 dark:bg-amber-400'}`} />
                 {settings.hasToken ? 'API Token' : 'No API Token'}
               </span>
               <span
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${
                   settings.isOAuthActive
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
                 }`}
               >
                 <span
-                  className={`w-1.5 h-1.5 rounded-full ${settings.isOAuthActive ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                  className={`w-1.5 h-1.5 rounded-full ${settings.isOAuthActive ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-amber-500 dark:bg-amber-400'}`}
                 />
                 {settings.isOAuthActive ? 'Webhooks Live' : 'OAuth Unlinked'}
               </span>
             </div>
 
+            {/* Theme Toggle Button */}
+            <button
+              onClick={toggleTheme}
+              aria-label="Toggle light/dark theme"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60 transition shadow-sm flex items-center justify-center"
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-indigo-600" />
+              )}
+            </button>
+
             <button
               onClick={() => setActiveTab('simulator')}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium flex items-center gap-1.5 transition shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white flex items-center gap-1.5 transition shadow-sm"
             >
               <Zap className="w-3.5 h-3.5" />
               Simulate Webhook
@@ -462,10 +499,10 @@ export default function Dashboard() {
           <div
             className={`p-4 rounded-xl border flex items-center justify-between text-xs transition shadow-sm ${
               oauthBanner.type === 'success'
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                 : oauthBanner.type === 'info'
-                ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300'
-                : 'bg-red-500/10 border-red-500/20 text-red-300'
+                ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-700 dark:text-indigo-300'
+                : 'bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-300'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -474,7 +511,7 @@ export default function Dashboard() {
             </div>
             <button
               onClick={() => setOauthBanner(null)}
-              className="text-slate-400 hover:text-white text-xs font-bold px-2 py-1"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold px-2 py-1"
             >
               ✕
             </button>
@@ -482,16 +519,16 @@ export default function Dashboard() {
         )}
 
         {!settings.isOAuthActive && !oauthBanner && (
-          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200">
+          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200 shadow-sm">
             <div className="flex items-center gap-2.5">
-              <Radio className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+              <Radio className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0 animate-pulse" />
               <span>
                 <strong>Action Required for Real-Time Sync:</strong> Todoist only delivers webhooks for accounts that have authorized the App.
               </span>
             </div>
             <button
               onClick={() => setActiveTab('settings')}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-lg shrink-0 transition"
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-lg shrink-0 transition shadow-sm"
             >
               Link App in Settings →
             </button>
@@ -499,55 +536,55 @@ export default function Dashboard() {
         )}
         {/* KPI Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm relative overflow-hidden">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden transition-colors">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tracked Habits</span>
-              <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Tracked Habits</span>
+              <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
                 <CheckCircle2 className="w-5 h-5" />
               </div>
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight text-white">{tasks.length}</span>
-              <span className="text-xs text-slate-400">active items</span>
+              <span className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{tasks.length}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">active items</span>
             </div>
           </div>
 
-          <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm relative overflow-hidden">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden transition-colors">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Habit Streaks Logged</span>
-              <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Habit Streaks Logged</span>
+              <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
                 <Flame className="w-5 h-5" />
               </div>
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight text-white">{stats.totalCompletions}</span>
-              <span className="text-xs text-emerald-400">completions</span>
+              <span className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{stats.totalCompletions}</span>
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">completions</span>
             </div>
           </div>
 
-          <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm relative overflow-hidden">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden transition-colors">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Webhooks Captured</span>
-              <div className="p-2 rounded-lg bg-violet-500/10 text-violet-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Webhooks Captured</span>
+              <div className="p-2 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
                 <Radio className="w-5 h-5" />
               </div>
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight text-white">{stats.webhookCount}</span>
-              <span className="text-xs text-slate-400">events received</span>
+              <span className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{stats.webhookCount}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">events received</span>
             </div>
           </div>
 
-          <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm relative overflow-hidden">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden transition-colors">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Workflows</span>
-              <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Workflows</span>
+              <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
                 <GitFork className="w-5 h-5" />
               </div>
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight text-white">1</span>
-              <span className="text-xs text-cyan-400">Auto-Recreate Active</span>
+              <span className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">1</span>
+              <span className="text-xs text-cyan-600 dark:text-cyan-400 font-medium">Auto-Recreate Active</span>
             </div>
           </div>
         </div>
@@ -574,55 +611,55 @@ export default function Dashboard() {
         )}
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-800 gap-6">
+        <div className="flex border-b border-slate-200 dark:border-slate-800 gap-2 sm:gap-6 overflow-x-auto transition-colors">
           <button
             onClick={() => setActiveTab('tasks')}
-            className={`pb-3 text-sm font-medium transition relative ${
-              activeTab === 'tasks' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+            className={`pb-3 text-sm font-medium transition relative whitespace-nowrap ${
+              activeTab === 'tasks' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             Habits & Tasks
-            {activeTab === 'tasks' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500" />}
+            {activeTab === 'tasks' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-500" />}
           </button>
 
           <button
             onClick={() => setActiveTab('workflows')}
-            className={`pb-3 text-sm font-medium transition relative ${
-              activeTab === 'workflows' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+            className={`pb-3 text-sm font-medium transition relative whitespace-nowrap ${
+              activeTab === 'workflows' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             Automation Workflows
-            {activeTab === 'workflows' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500" />}
+            {activeTab === 'workflows' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-500" />}
           </button>
 
           <button
             onClick={() => setActiveTab('logs')}
-            className={`pb-3 text-sm font-medium transition relative ${
-              activeTab === 'logs' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+            className={`pb-3 text-sm font-medium transition relative whitespace-nowrap ${
+              activeTab === 'logs' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             Live Webhook Logs ({webhookLogs.length})
-            {activeTab === 'logs' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500" />}
+            {activeTab === 'logs' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-500" />}
           </button>
 
           <button
             onClick={() => setActiveTab('simulator')}
-            className={`pb-3 text-sm font-medium transition relative ${
-              activeTab === 'simulator' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+            className={`pb-3 text-sm font-medium transition relative whitespace-nowrap ${
+              activeTab === 'simulator' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             Webhook Simulator
-            {activeTab === 'simulator' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500" />}
+            {activeTab === 'simulator' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-500" />}
           </button>
 
           <button
             onClick={() => setActiveTab('settings')}
-            className={`pb-3 text-sm font-medium transition relative ${
-              activeTab === 'settings' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+            className={`pb-3 text-sm font-medium transition relative whitespace-nowrap ${
+              activeTab === 'settings' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             Settings & Todoist Sync
-            {activeTab === 'settings' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500" />}
+            {activeTab === 'settings' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-500" />}
           </button>
         </div>
 
@@ -630,12 +667,12 @@ export default function Dashboard() {
         {activeTab === 'tasks' && (
           <div className="space-y-6">
             {/* Create Task Card */}
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm">
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-indigo-400" />
+            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 Add New Habit / Repeated Task
               </h2>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Tasks created here will automatically synchronize with Todoist and attach your chosen workflow.
               </p>
 
@@ -646,7 +683,7 @@ export default function Dashboard() {
                     value={newTaskTitle}
                     onChange={(e) => setNewTaskTitle(e.target.value)}
                     placeholder='e.g. "Swimming", "Read 30 mins", "Daily Meditation"'
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white placeholder:text-slate-500"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
                     required
                   />
                 </div>
@@ -655,7 +692,7 @@ export default function Dashboard() {
                   <select
                     value={newTaskWorkflow}
                     onChange={(e) => setNewTaskWorkflow(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white transition-colors"
                   >
                     <option value="immediate_recreate">Workflow: Recreate Immediately on Complete</option>
                     <option value="streak_only">Workflow: Streak Tracking Only</option>
@@ -677,12 +714,12 @@ export default function Dashboard() {
             </div>
 
             {/* Tasks List */}
-            <div className="rounded-2xl bg-slate-900/60 border border-slate-800 overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-                <h3 className="font-semibold text-sm text-white">Active Habits & Workflows ({tasks.length})</h3>
+            <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
+              <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="font-semibold text-sm text-slate-900 dark:text-white">Active Habits & Workflows ({tasks.length})</h3>
                 <button
                   onClick={loadData}
-                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition"
                   title="Refresh Tasks"
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -690,38 +727,38 @@ export default function Dashboard() {
               </div>
 
               {tasks.length === 0 ? (
-                <div className="p-12 text-center text-slate-400 text-sm">
-                  <Flame className="w-10 h-10 mx-auto text-slate-600 mb-3" />
+                <div className="p-12 text-center text-slate-500 dark:text-slate-400 text-sm">
+                  <Flame className="w-10 h-10 mx-auto text-slate-400 dark:text-slate-600 mb-3" />
                   No tasks tracked yet. Add your first habit above (e.g. &quot;Swimming&quot;) to start automating!
                 </div>
               ) : (
-                <div className="divide-y divide-slate-800/60">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {tasks.map((task) => (
-                    <div key={task.id} className="p-4 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-900/30 transition">
+                    <div key={task.id} className="p-4 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2.5">
-                          <span className="font-semibold text-white text-base">{task.title}</span>
+                          <span className="font-semibold text-slate-900 dark:text-white text-base">{task.title}</span>
                           
                           {/* Streak Badge */}
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            <Flame className="w-3 h-3 text-amber-400" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                            <Flame className="w-3 h-3 text-amber-500 dark:text-amber-400" />
                             {task.streak_count} streak
                           </span>
 
                           {/* Workflow Badge */}
                           {task.workflow_type === 'immediate_recreate' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                              <RefreshCw className="w-3 h-3 text-indigo-400" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                              <RefreshCw className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                               Immediate Recreate
                             </span>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-3 text-xs text-slate-400">
+                        <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                           {task.todoist_id ? (
-                            <span className="font-mono text-slate-400">Todoist ID: {task.todoist_id}</span>
+                            <span className="font-mono text-slate-500 dark:text-slate-400">Todoist ID: {task.todoist_id}</span>
                           ) : (
-                            <span className="text-amber-400">Local Only (No Todoist ID)</span>
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">Local Only (No Todoist ID)</span>
                           )}
                           {task.last_completed_at && (
                             <span>Last completed: {new Date(task.last_completed_at).toLocaleTimeString()}</span>
@@ -732,7 +769,7 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2 self-end sm:self-center">
                         <button
                           onClick={() => handleTriggerComplete(task)}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
+                          className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 transition"
                           title="Complete in Todoist & Trigger Workflow"
                         >
                           <Check className="w-3.5 h-3.5" />
@@ -741,7 +778,7 @@ export default function Dashboard() {
 
                         <button
                           onClick={() => handleDeleteTask(task.id)}
-                          className="p-1.5 rounded-xl hover:bg-red-500/10 text-slate-500 hover:text-red-400 transition"
+                          className="p-1.5 rounded-xl hover:bg-red-500/10 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition"
                           title="Delete Task"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -758,39 +795,39 @@ export default function Dashboard() {
         {/* TAB 2: Workflows */}
         {activeTab === 'workflows' && (
           <div className="space-y-6">
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <GitFork className="w-5 h-5 text-indigo-400" />
+            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <GitFork className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 Workflow Engine Architecture
               </h2>
-              <p className="text-sm text-slate-400 mt-1">
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Workflows automate actions triggered by Todoist webhook lifecycle events.
               </p>
 
               <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Trigger */}
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2">1. Trigger Event</div>
-                  <div className="font-semibold text-white">item:completed</div>
-                  <p className="text-xs text-slate-400 mt-2">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 transition-colors">
+                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">1. Trigger Event</div>
+                  <div className="font-semibold text-slate-900 dark:text-white">item:completed</div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                     Fires via Todoist webhook whenever you check off a task in your Todoist app (mobile, desktop, or web).
                   </p>
                 </div>
 
                 {/* Condition */}
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2">2. Rule Evaluation</div>
-                  <div className="font-semibold text-white">Task Workflow = immediate_recreate</div>
-                  <p className="text-xs text-slate-400 mt-2">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 transition-colors">
+                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">2. Rule Evaluation</div>
+                  <div className="font-semibold text-slate-900 dark:text-white">Task Workflow = immediate_recreate</div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                     Engine matches task in Supabase DB by Todoist ID, verifies workflow settings, and increments habit streak counter.
                   </p>
                 </div>
 
                 {/* Action */}
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2">3. Action Executed</div>
-                  <div className="font-semibold text-emerald-400">Recreate Task in Todoist</div>
-                  <p className="text-xs text-slate-400 mt-2">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 transition-colors">
+                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">3. Action Executed</div>
+                  <div className="font-semibold text-emerald-600 dark:text-emerald-400">Recreate Task in Todoist</div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                     Calls Todoist REST API to immediately spawn a new instance of the habit task, logs the webhook audit event, and updates dashboard metrics.
                   </p>
                 </div>
@@ -798,20 +835,20 @@ export default function Dashboard() {
             </div>
 
             {/* Workflow List */}
-            <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-6 space-y-4">
-              <h3 className="font-semibold text-sm text-white">Configured Automation Rules</h3>
+            <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4 transition-colors">
+              <h3 className="font-semibold text-sm text-slate-900 dark:text-white">Configured Automation Rules</h3>
               
-              <div className="p-4 rounded-xl bg-slate-950 border border-indigo-500/30 flex items-center justify-between">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-indigo-500/30 flex items-center justify-between transition-colors">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-white">Immediate Habit Recreation Loop</span>
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">Immediate Habit Recreation Loop</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium">Active</span>
                   </div>
-                  <p className="text-xs text-slate-400">
-                    When <code className="text-indigo-300">item:completed</code> occurs for any habit marked with <code className="text-indigo-300">immediate_recreate</code>, recreate in Todoist with delay = 0s and increment habit streak.
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    When <code className="text-indigo-600 dark:text-indigo-300 font-mono">item:completed</code> occurs for any habit marked with <code className="text-indigo-600 dark:text-indigo-300 font-mono">immediate_recreate</code>, recreate in Todoist with delay = 0s and increment habit streak.
                   </p>
                 </div>
-                <div className="text-xs text-slate-500 font-mono">ID: default-loop</div>
+                <div className="text-xs text-slate-400 dark:text-slate-500 font-mono">ID: default-loop</div>
               </div>
             </div>
           </div>
@@ -819,20 +856,20 @@ export default function Dashboard() {
 
         {/* TAB 3: Webhook Logs */}
         {activeTab === 'logs' && (
-          <div className="rounded-2xl bg-slate-900/60 border border-slate-800 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-sm text-white flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-violet-400" />
+                <h3 className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                   Live Webhook Activity Feed
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   All incoming Todoist and simulator webhook calls are recorded for diagnostics and dashboard analytics.
                 </p>
               </div>
               <button
                 onClick={loadData}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs text-slate-600 dark:text-slate-300 transition flex items-center gap-1.5"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 Refresh
@@ -840,13 +877,13 @@ export default function Dashboard() {
             </div>
 
             {webhookLogs.length === 0 ? (
-              <div className="p-12 text-center text-slate-400 text-sm">
+              <div className="p-12 text-center text-slate-500 dark:text-slate-400 text-sm">
                 No webhooks captured yet. Use the Simulator tab or connect Todoist to trigger the first webhook!
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
+                <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+                  <thead className="bg-slate-50 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="px-6 py-3">Timestamp</th>
                       <th className="px-6 py-3">Event</th>
@@ -855,23 +892,23 @@ export default function Dashboard() {
                       <th className="px-6 py-3">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
                     {webhookLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-900/40">
-                        <td className="px-6 py-3 text-slate-400 whitespace-nowrap">
+                      <tr key={log.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-colors">
+                        <td className="px-6 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
                           {new Date(log.created_at).toLocaleTimeString()}
                         </td>
-                        <td className="px-6 py-3 text-indigo-400 font-semibold">{log.event_name}</td>
-                        <td className="px-6 py-3 text-slate-400">{log.source}</td>
-                        <td className="px-6 py-3 text-slate-200 font-sans">{log.action_taken || 'Processed'}</td>
+                        <td className="px-6 py-3 text-indigo-600 dark:text-indigo-400 font-semibold">{log.event_name}</td>
+                        <td className="px-6 py-3 text-slate-500 dark:text-slate-400">{log.source}</td>
+                        <td className="px-6 py-3 text-slate-800 dark:text-slate-200 font-sans">{log.action_taken || 'Processed'}</td>
                         <td className="px-6 py-3">
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
                               log.processed_status === 'success'
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
                                 : log.processed_status === 'ignored'
-                                ? 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
-                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                ? 'bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20'
+                                : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
                             }`}
                           >
                             {log.processed_status}
@@ -888,13 +925,13 @@ export default function Dashboard() {
 
         {/* TAB 4: Webhook Simulator */}
         {activeTab === 'simulator' && (
-          <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-6">
+          <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 transition-colors">
             <div>
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <Zap className="w-5 h-5 text-amber-400" />
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Zap className="w-5 h-5 text-amber-500 dark:text-amber-400" />
                 Webhook Simulation & Testing Lab
               </h2>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Test the complete webhook workflow immediately! This simulates the exact payload Todoist sends when you complete a task.
               </p>
             </div>
@@ -902,13 +939,13 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
                     Select Habit to Simulate Complete:
                   </label>
                   <select
                     value={simTask}
                     onChange={(e) => setSimTask(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white transition-colors"
                   >
                     <option value="">-- Choose a tracked task --</option>
                     {tasks.map((t) => (
@@ -925,9 +962,9 @@ export default function Dashboard() {
                     id="simClose"
                     checked={simCloseInTodoist}
                     onChange={(e) => setSimCloseInTodoist(e.target.checked)}
-                    className="rounded border-slate-800 bg-slate-950 text-indigo-600 focus:ring-0"
+                    className="rounded border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 text-indigo-600 focus:ring-0"
                   />
-                  <label htmlFor="simClose" className="text-xs text-slate-300">
+                  <label htmlFor="simClose" className="text-xs text-slate-700 dark:text-slate-300">
                     Also close task in Todoist API (if token is connected)
                   </label>
                 </div>
@@ -943,7 +980,7 @@ export default function Dashboard() {
               </div>
 
               {/* Simulation Result Terminal */}
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs">
+              <div className="p-4 rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 font-mono text-xs shadow-inner">
                 <div className="text-slate-400 uppercase tracking-wider text-[10px] mb-2 font-bold flex items-center justify-between">
                   <span>Engine Response Output</span>
                   {simResult && <span className="text-emerald-400">Status 200 OK</span>}
@@ -953,7 +990,7 @@ export default function Dashboard() {
                     {JSON.stringify(simResult, null, 2)}
                   </pre>
                 ) : (
-                  <div className="text-slate-600 py-12 text-center">
+                  <div className="text-slate-500 py-12 text-center">
                     Select a task and click &quot;Fire Webhook Event&quot; to inspect workflow execution.
                   </div>
                 )}
@@ -966,27 +1003,27 @@ export default function Dashboard() {
         {activeTab === 'settings' && (
           <div className="space-y-6">
             {/* Real-time Webhooks & OAuth App Setup */}
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-5">
+            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5 transition-colors">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                    <Radio className="w-5 h-5 text-indigo-400" />
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Radio className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                     Todoist OAuth App & Real-Time Webhooks
                   </h2>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     Todoist requires your application to be authorized by your account so it knows where to dispatch live completion webhooks.
                   </p>
                 </div>
                 <span
                   className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border shrink-0 ${
                     settings.isOAuthActive
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
                   }`}
                 >
                   <span
                     className={`w-2 h-2 rounded-full ${
-                      settings.isOAuthActive ? 'bg-emerald-400' : 'bg-amber-400'
+                      settings.isOAuthActive ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-amber-500 dark:bg-amber-400'
                     }`}
                   />
                   {settings.isOAuthActive ? 'App Linked & Webhooks Active' : 'Authorization Required'}
@@ -994,8 +1031,8 @@ export default function Dashboard() {
               </div>
 
               {settings.isOAuthActive && (
-                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>
                     Your Todoist account is connected! When you check off tasks in Todoist (mobile, desktop, or web), freeFlow will immediately catch the webhook, increment streaks, and recreate habits.
                   </span>
@@ -1006,7 +1043,7 @@ export default function Dashboard() {
               <form onSubmit={handleSaveOAuthSettings} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
                       Todoist Client ID:
                     </label>
                     <input
@@ -1014,12 +1051,12 @@ export default function Dashboard() {
                       value={clientIdInput}
                       onChange={(e) => setClientIdInput(e.target.value)}
                       placeholder="e.g. 0123456789abcdef"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono placeholder:text-slate-600"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-colors"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
                       Todoist Client Secret:
                     </label>
                     <input
@@ -1031,7 +1068,7 @@ export default function Dashboard() {
                           ? `Saved (${settings.maskedClientSecret})`
                           : 'Paste Todoist Client Secret'
                       }
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono placeholder:text-slate-600"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-colors"
                     />
                   </div>
                 </div>
@@ -1050,7 +1087,7 @@ export default function Dashboard() {
                   <button
                     type="submit"
                     disabled={isSavingOAuth}
-                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-sm font-semibold transition flex items-center gap-2"
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-transparent text-sm font-semibold transition flex items-center gap-2"
                   >
                     {isSavingOAuth ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                     Save Credentials Only
@@ -1062,8 +1099,8 @@ export default function Dashboard() {
                 <div
                   className={`text-xs p-3 rounded-xl border ${
                     oauthFeedback.type === 'success'
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-                      : 'bg-red-500/10 border-red-500/20 text-red-300'
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-red-500/10 border-red-500/20 text-red-800 dark:text-red-300'
                   }`}
                 >
                   {oauthFeedback.message}
@@ -1071,15 +1108,15 @@ export default function Dashboard() {
               )}
 
               {/* Developer Console Configuration Box */}
-              <div className="pt-2 border-t border-slate-800/80 space-y-3">
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800/80 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-300">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Required Settings for your{' '}
                     <a
                       href="https://developer.todoist.com/appconsole.html"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-indigo-400 hover:underline inline-flex items-center gap-1"
+                      className="text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1"
                     >
                       Todoist Developer Console <ExternalLink className="w-3 h-3" />
                     </a>:
@@ -1087,8 +1124,8 @@ export default function Dashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between text-slate-400">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                       <span>OAuth redirect URL</span>
                       <button
                         onClick={() =>
@@ -1097,19 +1134,19 @@ export default function Dashboard() {
                             'redirect'
                           )
                         }
-                        className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                        className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 flex items-center gap-1 font-medium"
                       >
-                        {copiedKey === 'redirect' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        {copiedKey === 'redirect' ? <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3 h-3" />}
                         {copiedKey === 'redirect' ? 'Copied' : 'Copy'}
                       </button>
                     </div>
-                    <code className="text-indigo-300 font-mono text-[11px] block break-all">
+                    <code className="text-indigo-600 dark:text-indigo-300 font-mono text-[11px] block break-all">
                       {typeof window !== 'undefined' ? window.location.origin : 'https://freeflow.mkshp.dev'}/api/auth/callback
                     </code>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between text-slate-400">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                       <span>Webhook callback URL</span>
                       <button
                         onClick={() =>
@@ -1118,37 +1155,37 @@ export default function Dashboard() {
                             'webhook'
                           )
                         }
-                        className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                        className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 flex items-center gap-1 font-medium"
                       >
-                        {copiedKey === 'webhook' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        {copiedKey === 'webhook' ? <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3 h-3" />}
                         {copiedKey === 'webhook' ? 'Copied' : 'Copy'}
                       </button>
                     </div>
-                    <code className="text-indigo-300 font-mono text-[11px] block break-all">
+                    <code className="text-indigo-600 dark:text-indigo-300 font-mono text-[11px] block break-all">
                       {typeof window !== 'undefined' ? window.location.origin : 'https://freeflow.mkshp.dev'}/api/webhooks/todoist
                     </code>
                   </div>
                 </div>
 
-                <p className="text-[11px] text-slate-400">
-                  <strong>Watched events:</strong> In Todoist App settings, ensure <code className="text-indigo-300">item:completed</code>, <code className="text-indigo-300">item:added</code>, and <code className="text-indigo-300">item:deleted</code> are checked.
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <strong>Watched events:</strong> In Todoist App settings, ensure <code className="text-indigo-600 dark:text-indigo-300 font-mono">item:completed</code>, <code className="text-indigo-600 dark:text-indigo-300 font-mono">item:added</code>, and <code className="text-indigo-600 dark:text-indigo-300 font-mono">item:deleted</code> are checked.
                 </p>
               </div>
             </div>
 
             {/* Todoist Personal API Token (Fallback) */}
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <Settings className="w-5 h-5 text-indigo-400" />
+            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 transition-colors">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Settings className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 Personal API Token (Manual Fallback)
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 The Personal API Token allows freeFlow to make direct REST API requests. It is automatically filled when you complete the OAuth authorization above, or you can paste one manually.
               </p>
 
               {settings.hasToken && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>
                     API token active: <strong className="font-mono">{settings.maskedToken}</strong>
                   </span>
@@ -1161,7 +1198,7 @@ export default function Dashboard() {
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value)}
                   placeholder="Paste Todoist Personal API Token"
-                  className="flex-1 px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white placeholder:text-slate-500"
+                  className="flex-1 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
                 />
                 <button
                   type="submit"
@@ -1176,8 +1213,8 @@ export default function Dashboard() {
                 <div
                   className={`text-xs p-3 rounded-xl border ${
                     tokenFeedback.type === 'success'
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-                      : 'bg-red-500/10 border-red-500/20 text-red-300'
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-red-500/10 border-red-500/20 text-red-800 dark:text-red-300'
                   }`}
                 >
                   {tokenFeedback.message}
@@ -1186,14 +1223,14 @@ export default function Dashboard() {
             </div>
 
             {/* Supabase Schema Reference */}
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
+            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 transition-colors">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                    <Database className="w-5 h-5 text-emerald-400" />
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Database className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                     Supabase SQL Schema
                   </h2>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     Execute this script in your Supabase SQL Editor if your tables are not yet created.
                   </p>
                 </div>
@@ -1271,7 +1308,7 @@ CREATE POLICY "Full access app_settings" ON public.app_settings FOR ALL USING (t
                     setCopySuccess(true);
                     setTimeout(() => setCopySuccess(false), 2000);
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600/10 hover:bg-emerald-600/20 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/30 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
                 >
                   {copySuccess ? <Check className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
                   {copySuccess ? 'Copied to Clipboard!' : 'Copy SQL Schema'}
