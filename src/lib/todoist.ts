@@ -1,6 +1,6 @@
 import { supabaseAdmin } from './supabase';
 
-const TODOIST_API_BASE = 'https://api.todoist.com/rest/v2';
+const TODOIST_API_BASE = 'https://api.todoist.com/api/v1';
 
 /**
  * Get active Todoist API token, checking database settings first, then env variable.
@@ -27,12 +27,19 @@ export async function getTodoistToken(): Promise<string | null> {
  * Save Todoist token in the database
  */
 export async function saveTodoistToken(token: string): Promise<void> {
-  await supabaseAdmin.from('app_settings').upsert({
-    key: 'TODOIST_API_TOKEN',
-    value: token,
-    description: 'Todoist Personal API Token',
-    updated_at: new Date().toISOString(),
-  });
+  const { error } = await supabaseAdmin.from('app_settings').upsert(
+    {
+      key: 'TODOIST_API_TOKEN',
+      value: token,
+      description: 'Todoist Personal API Token',
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  );
+
+  if (error) {
+    throw new Error(`Failed to save token to database: ${error.message}`);
+  }
 }
 
 /**

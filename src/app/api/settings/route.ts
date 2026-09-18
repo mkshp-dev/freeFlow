@@ -14,7 +14,7 @@ export async function GET() {
 
     if (token) {
       try {
-        const res = await fetch('https://api.todoist.com/rest/v2/projects', {
+        const res = await fetch('https://api.todoist.com/api/v1/projects', {
           headers: { Authorization: `Bearer ${token}` },
         });
         isValid = res.ok;
@@ -43,19 +43,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Token cannot be empty' }, { status: 400 });
     }
 
+    const cleanToken = token.trim();
+
     // Verify token with Todoist
-    const res = await fetch('https://api.todoist.com/rest/v2/projects', {
-      headers: { Authorization: `Bearer ${token.trim()}` },
+    const res = await fetch('https://api.todoist.com/api/v1/projects', {
+      headers: { Authorization: `Bearer ${cleanToken}` },
     });
 
     if (!res.ok) {
+      const errText = await res.text();
       return NextResponse.json(
-        { error: 'Invalid Todoist API token. Todoist rejected credentials.' },
+        { error: `Invalid Todoist API token (HTTP ${res.status}): ${errText || 'Todoist rejected credentials.'}` },
         { status: 400 }
       );
     }
 
-    await saveTodoistToken(token.trim());
+    await saveTodoistToken(cleanToken);
 
     return NextResponse.json({
       success: true,
