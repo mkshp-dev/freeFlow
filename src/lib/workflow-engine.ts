@@ -52,7 +52,7 @@ export async function processTodoistWebhookEvent(
       const { data, error } = await supabaseAdmin
         .from('tasks')
         .select('*')
-        .eq('title', taskTitle)
+        .ilike('title', taskTitle.trim())
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(1)
