@@ -13,6 +13,7 @@ export interface Task {
   streak_count: number;
   workflow_type: WorkflowType;
   workflow_config?: Record<string, any>;
+  user_id?: string | null;
   last_completed_at?: string | null;
   created_at: string;
   updated_at: string;

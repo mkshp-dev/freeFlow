@@ -36,10 +36,19 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
+  User,
+  LogIn,
+  LogOut,
+  KeyRound,
 } from 'lucide-react';
 import { Task, Workflow, WebhookLog } from '@/types';
+import { useAuth } from '@/context/AuthContext';
+import AuthModal, { AuthMode } from '@/components/AuthModal';
 
 export default function Dashboard() {
+  const { user, isRecoveryMode, signOut } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<AuthMode>('login');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tasks' | 'workflows' | 'logs' | 'simulator' | 'settings'>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -102,10 +111,13 @@ export default function Dashboard() {
   const [copySuccess, setCopySuccess] = useState(false);
 
   // Load all initial data
-  const loadData = async () => {
+  const loadData = async (overrideUserId?: unknown) => {
     try {
+      const currentUserId = typeof overrideUserId === 'string' ? overrideUserId : user?.id;
+      const tasksUrl = currentUserId ? `/api/tasks?userId=${encodeURIComponent(currentUserId)}` : '/api/tasks';
+
       const [tasksRes, logsRes, statsRes, settingsRes] = await Promise.all([
-        fetch('/api/tasks'),
+        fetch(tasksUrl),
         fetch('/api/webhooks/logs'),
         fetch('/api/stats'),
         fetch('/api/settings'),
@@ -131,6 +143,19 @@ export default function Dashboard() {
       setIsLoading(false);
     }
   };
+
+  // Listen for recovery mode from URL hash
+  useEffect(() => {
+    if (isRecoveryMode) {
+      setAuthModalMode('reset-password');
+      setAuthModalOpen(true);
+    }
+  }, [isRecoveryMode]);
+
+  // Re-fetch tasks whenever the active user changes
+  useEffect(() => {
+    loadData(user?.id);
+  }, [user?.id]);
 
   useEffect(() => {
     loadData();
@@ -238,6 +263,7 @@ export default function Dashboard() {
           priority: parseInt(newTaskPriority, 10),
           workflow_type: newTaskWorkflow,
           sync_with_todoist: true,
+          user_id: user?.id || null,
         }),
       });
 
@@ -563,8 +589,70 @@ export default function Dashboard() {
               </nav>
             </div>
 
-            {/* Drawer Footer: Health Indicators & Version */}
+            {/* Drawer Footer: User Profile & Health Indicators */}
             <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+              {/* User Account Card */}
+              {user ? (
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold uppercase shrink-0 shadow-xs">
+                      {user.email?.charAt(0) || 'U'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate" title={user.email}>
+                        {user.email}
+                      </p>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Signed In
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      signOut();
+                      setMobileMenuOpen(false);
+                    }}
+                    title="Sign Out"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-800/40 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      Account
+                    </span>
+                    <span className="text-[10px] text-slate-400">Guest</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => {
+                        setAuthModalMode('login');
+                        setAuthModalOpen(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition"
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAuthModalMode('signup');
+                        setAuthModalOpen(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition"
+                    >
+                      Sign Up
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500 dark:text-slate-400">Database</span>
@@ -665,8 +753,72 @@ export default function Dashboard() {
           })}
         </div>
 
-        {/* Sidebar Footer: Health Indicators & Version */}
+        {/* Sidebar Footer: User Account & Health Indicators */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+          {/* User Account Card */}
+          {user ? (
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold uppercase shrink-0 shadow-xs">
+                    {user.email?.charAt(0) || 'U'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate" title={user.email}>
+                      {user.email}
+                    </p>
+                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Signed In
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  title="Sign Out"
+                  className="p-1.5 text-slate-400 hover:text-red-500 dark:hover:text-red-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-800/40 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-indigo-500/10 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                    <User className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Account</span>
+                </div>
+                <span className="text-[10px] text-slate-400">Guest</span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                Sign in to link habits and sync across devices.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    setAuthModalMode('login');
+                    setAuthModalOpen(true);
+                  }}
+                  className="flex-1 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition text-center shadow-xs"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => {
+                    setAuthModalMode('signup');
+                    setAuthModalOpen(true);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold transition"
+                >
+                  Sign Up
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Engine Status Pill */}
           <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1.5">
             <div className="flex items-center justify-between">
@@ -768,6 +920,40 @@ export default function Dashboard() {
             >
               {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
             </button>
+
+            {/* Top Row User Auth */}
+            {user ? (
+              <div className="flex items-center gap-2 pl-1 sm:pl-2 border-l border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold uppercase shadow-sm">
+                    {user.email?.charAt(0) || 'U'}
+                  </div>
+                  <span className="hidden md:inline text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[130px] truncate" title={user.email}>
+                    {user.email}
+                  </span>
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  title="Sign Out"
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-red-50 hover:text-red-600 dark:bg-slate-800 dark:hover:bg-red-950/40 dark:hover:text-red-400 text-slate-500 dark:text-slate-400 transition flex items-center justify-center"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 pl-1 sm:pl-2 border-l border-slate-200 dark:border-slate-800">
+                <button
+                  onClick={() => {
+                    setAuthModalMode('login');
+                    setAuthModalOpen(true);
+                  }}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 text-xs font-semibold flex items-center gap-1.5 transition"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Sign In</span>
+                </button>
+              </div>
+            )}
 
             {/* Quick Action Simulator Button */}
             <button
@@ -1569,6 +1755,79 @@ export default function Dashboard() {
         {/* TAB 5: Settings & Todoist Sync */}
         {activeTab === 'settings' && (
           <div className="space-y-6">
+            {/* User Account & Security Section */}
+            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5 transition-colors">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-indigo-500/20">
+                    {user ? (user.email?.charAt(0).toUpperCase() || 'U') : <User className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                      User Account & Security
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {user ? `Signed in as ${user.email}` : 'You are currently browsing in Guest Mode.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {user ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          setAuthModalMode('forgot');
+                          setAuthModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        Reset Password
+                      </button>
+                      <button
+                        onClick={() => signOut()}
+                        className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/40 dark:hover:bg-red-900/50 dark:text-red-400 text-xs font-semibold flex items-center gap-1.5 transition"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        Sign Out
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          setAuthModalMode('login');
+                          setAuthModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                      >
+                        <LogIn className="w-3.5 h-3.5" />
+                        Sign In
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAuthModalMode('signup');
+                          setAuthModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-semibold transition"
+                      >
+                        Create Account
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Privacy Guarantee Banner */}
+              <div className="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-xs flex items-start gap-2.5">
+                <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong>Strict Privacy Commitment:</strong> We only collect your email address for account recovery and password resets. We will never sell your data, send marketing emails, or contact you for promotional reasons.
+                </div>
+              </div>
+            </div>
+
             {/* Real-time Webhooks & OAuth App Setup */}
             <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5 transition-colors">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1817,10 +2076,15 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     streak_count INTEGER NOT NULL DEFAULT 0,
     workflow_type TEXT NOT NULL DEFAULT 'immediate_recreate',
     workflow_config JSONB DEFAULT '{}'::jsonb,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     last_completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+CREATE INDEX IF NOT EXISTS idx_tasks_todoist_id ON public.tasks(todoist_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id);
 
 CREATE TABLE IF NOT EXISTS public.workflows (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1871,7 +2135,11 @@ CREATE POLICY "Full access tasks" ON public.tasks FOR ALL USING (true) WITH CHEC
 CREATE POLICY "Full access workflows" ON public.workflows FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Full access webhook_logs" ON public.webhook_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Full access workflow_runs" ON public.workflow_runs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full access app_settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);`);
+CREATE POLICY "Full access app_settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
+
+-- Migration for existing tasks table:
+-- ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+-- CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id);`);
                     setCopySuccess(true);
                     setTimeout(() => setCopySuccess(false), 2000);
                   }}
@@ -1886,6 +2154,13 @@ CREATE POLICY "Full access app_settings" ON public.app_settings FOR ALL USING (t
         )}
         </main>
       </div>
+
+      {/* Authentication & Password Recovery Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        initialMode={authModalMode}
+      />
     </div>
   );
 }

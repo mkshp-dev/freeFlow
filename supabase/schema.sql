@@ -17,14 +17,16 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     streak_count INTEGER NOT NULL DEFAULT 0,
     workflow_type TEXT NOT NULL DEFAULT 'immediate_recreate' CHECK (workflow_type IN ('immediate_recreate', 'interval_recreate', 'streak_only', 'none')),
     workflow_config JSONB DEFAULT '{}'::jsonb,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     last_completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Index for quick lookup when Todoist sends webhook with item ID
+-- Index for quick lookup when Todoist sends webhook with item ID or when user queries habits
 CREATE INDEX IF NOT EXISTS idx_tasks_todoist_id ON public.tasks(todoist_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id);
 
 -- 3. Workflows Table
 CREATE TABLE IF NOT EXISTS public.workflows (
@@ -107,3 +109,7 @@ CREATE POLICY "Allow full access for authenticated and anon users on workflow_ru
 
 CREATE POLICY "Allow full access for authenticated and anon users on app_settings"
     ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
+
+-- Migration helper for existing installations:
+-- ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+-- CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id);
