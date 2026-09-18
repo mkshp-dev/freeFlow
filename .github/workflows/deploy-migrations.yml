@@ -1,0 +1,56 @@
+name: Apply Supabase Database Migrations
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/deploy-migrations.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy-migrations:
+    name: Deploy Database Schema & Migrations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Apply Migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          echo "============================================="
+          echo "Applying Supabase database migrations..."
+          echo "============================================="
+
+          if [ -n "$DATABASE_URL" ]; then
+            echo "Direct DATABASE_URL detected. Pushing schema migrations..."
+            supabase db push --db-url "$DATABASE_URL" --include-all || {
+              echo "CLI push encountered an issue, running via psql directly..."
+              psql "$DATABASE_URL" -f supabase/schema.sql
+            }
+            echo "Migrations successfully applied via DATABASE_URL!"
+
+          elif [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$SUPABASE_PROJECT_ID" ] && [ -n "$SUPABASE_DB_PASSWORD" ]; then
+            echo "Supabase Access Token detected. Linking project: $SUPABASE_PROJECT_ID..."
+            supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
+            supabase db push
+            echo "Migrations successfully applied via Supabase CLI link!"
+
+          else
+            echo "⚠️ Neither DATABASE_URL nor (SUPABASE_ACCESS_TOKEN + SUPABASE_DB_PASSWORD) were provided in GitHub Secrets."
+            echo "Please run ./scripts/set-repo-secrets.sh after configuring DATABASE_URL or your DB password."
+            exit 1
+          fi
