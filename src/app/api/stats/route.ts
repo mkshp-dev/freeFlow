@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+export const runtime = 'edge';
+
 export async function GET() {
   try {
     // 1. Get task count and streak sums

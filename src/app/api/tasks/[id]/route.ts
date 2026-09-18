@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { completeTodoistTask, deleteTodoistTask } from '@/lib/todoist';
 
+export const runtime = 'edge';
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }

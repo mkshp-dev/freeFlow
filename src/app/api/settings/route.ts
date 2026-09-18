@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTodoistToken, saveTodoistToken } from '@/lib/todoist';
 
+export const runtime = 'edge';
+
 export async function GET() {
   try {
     const token = await getTodoistToken();

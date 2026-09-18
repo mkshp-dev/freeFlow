@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { supabaseAdmin } from './supabase';
 
 const TODOIST_API_BASE = 'https://api.todoist.com/rest/v2';
@@ -131,13 +130,13 @@ export async function deleteTodoistTask(taskId: string) {
 }
 
 /**
- * Verifies Todoist webhook HMAC-SHA256 signature
+ * Verifies Todoist webhook HMAC-SHA256 signature using standard Web Crypto API
  */
-export function verifyTodoistWebhookSignature(
+export async function verifyTodoistWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
   clientSecret?: string
-): boolean {
+): Promise<boolean> {
   const secret = clientSecret || process.env.TODOIST_CLIENT_SECRET;
   if (!secret || !signatureHeader) {
     // If secret is not set, we allow the request in development/demo mode but log warning
@@ -145,12 +144,28 @@ export function verifyTodoistWebhookSignature(
   }
 
   try {
-    const hash = crypto
-      .createHmac('sha256', secret)
-      .update(rawBody)
-      .digest('base64');
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const bodyData = encoder.encode(rawBody);
 
-    return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signatureHeader));
+    const cryptoObj = typeof crypto !== 'undefined' ? crypto : (globalThis as any).crypto;
+    const key = await cryptoObj.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    const signature = await cryptoObj.subtle.sign('HMAC', key, bodyData);
+    const bytes = new Uint8Array(signature);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64Hash = btoa(binary);
+
+    return base64Hash === signatureHeader;
   } catch (e) {
     console.error('Signature verification error:', e);
     return false;

@@ -3,13 +3,15 @@ import { processTodoistWebhookEvent } from '@/lib/workflow-engine';
 import { verifyTodoistWebhookSignature } from '@/lib/todoist';
 import { TodoistWebhookEvent } from '@/types';
 
+export const runtime = 'edge';
+
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-todoist-hmac-sha256');
 
     // Verify signature if secret is provided in environment
-    const isValid = verifyTodoistWebhookSignature(rawBody, signature);
+    const isValid = await verifyTodoistWebhookSignature(rawBody, signature);
     if (!isValid) {
       console.warn('⚠️ Invalid Todoist webhook HMAC signature.');
       return NextResponse.json({ error: 'Invalid HMAC signature' }, { status: 401 });

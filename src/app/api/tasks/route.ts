@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { createTodoistTask, getTodoistToken } from '@/lib/todoist';
 
+export const runtime = 'edge';
+
 export async function GET() {
   try {
     const { data, error } = await supabaseAdmin

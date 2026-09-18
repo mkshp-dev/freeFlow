@@ -3,6 +3,8 @@ import { processTodoistWebhookEvent } from '@/lib/workflow-engine';
 import { completeTodoistTask } from '@/lib/todoist';
 import { TodoistWebhookEvent } from '@/types';
 
+export const runtime = 'edge';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
