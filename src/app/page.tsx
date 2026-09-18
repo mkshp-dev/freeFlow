@@ -18,7 +18,8 @@ import {
   Database,
   ArrowRight,
   ShieldCheck,
-  Zap
+  Zap,
+  Copy
 } from 'lucide-react';
 import { Task, Workflow, WebhookLog } from '@/types';
 
@@ -41,14 +42,28 @@ export default function Dashboard() {
     hasToken: boolean;
     isValid: boolean;
     maskedToken: string | null;
+    hasClientId?: boolean;
+    clientId?: string;
+    hasClientSecret?: boolean;
+    maskedClientSecret?: string | null;
+    isOAuthActive?: boolean;
+    webhookEndpoint?: string;
+    oauthRedirectEndpoint?: string;
   }>({
     hasToken: false,
     isValid: false,
     maskedToken: null,
   });
   const [tokenInput, setTokenInput] = useState('');
+  const [clientIdInput, setClientIdInput] = useState('');
+  const [clientSecretInput, setClientSecretInput] = useState('');
   const [isSavingToken, setIsSavingToken] = useState(false);
+  const [isSavingOAuth, setIsSavingOAuth] = useState(false);
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [tokenFeedback, setTokenFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [oauthFeedback, setOauthFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [oauthBanner, setOauthBanner] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // New task form state
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -85,7 +100,12 @@ export default function Dashboard() {
       if (tasksData.tasks) setTasks(tasksData.tasks);
       if (logsData.logs) setWebhookLogs(logsData.logs);
       if (statsData) setStats(statsData);
-      if (settingsData) setSettings(settingsData);
+      if (settingsData) {
+        setSettings(settingsData);
+        if (settingsData.clientId) {
+          setClientIdInput(settingsData.clientId);
+        }
+      }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     } finally {
@@ -95,6 +115,67 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
+
+    // Check URL parameters for OAuth return or exchange
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const oauthParam = params.get('oauth');
+      const codeParam = params.get('code');
+      const errorParam = params.get('error');
+
+      if (oauthParam === 'success') {
+        setOauthBanner({
+          type: 'success',
+          message: '🎉 Todoist OAuth App successfully linked and installed! Real-time webhooks are now active.',
+        });
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (oauthParam === 'error') {
+        setOauthBanner({
+          type: 'error',
+          message: `OAuth Link Error: ${errorParam || 'Failed to complete authorization'}`,
+        });
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (codeParam) {
+        // Automatically exchange code with the backend
+        setOauthBanner({
+          type: 'info',
+          message: 'Exchanging authorization code with Todoist...',
+        });
+        fetch('/api/auth/callback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: codeParam,
+            redirectUri: `${window.location.origin}/api/auth/callback`,
+          }),
+        })
+          .then((r) => r.json())
+          .then((res) => {
+            if (res.success) {
+              setOauthBanner({
+                type: 'success',
+                message: '🎉 Todoist OAuth App linked successfully! Real-time webhooks are now active.',
+              });
+              loadData();
+            } else {
+              setOauthBanner({
+                type: 'error',
+                message: `OAuth Exchange failed: ${res.error || 'Unknown error'}`,
+              });
+            }
+          })
+          .catch((err) => {
+            setOauthBanner({
+              type: 'error',
+              message: `OAuth Exchange failed: ${err.message}`,
+            });
+          })
+          .finally(() => {
+            window.history.replaceState({}, '', window.location.pathname);
+          });
+      }
+    }
+
     // Auto-refresh webhook logs and stats every 8 seconds
     const interval = setInterval(() => {
       loadData();
@@ -201,6 +282,84 @@ export default function Dashboard() {
     }
   };
 
+  // Copy helper
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  // Save OAuth Settings
+  const handleSaveOAuthSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingOAuth(true);
+    setOauthFeedback(null);
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: clientIdInput.trim() || undefined,
+          clientSecret: clientSecretInput.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setOauthFeedback({ type: 'success', message: 'OAuth App credentials saved successfully.' });
+        loadData();
+      } else {
+        setOauthFeedback({ type: 'error', message: data.error || 'Failed to save OAuth settings' });
+      }
+    } catch (err: any) {
+      setOauthFeedback({ type: 'error', message: err.message });
+    } finally {
+      setIsSavingOAuth(false);
+    }
+  };
+
+  // Initiate OAuth Authorization flow
+  const handleAuthorizeOAuth = async () => {
+    if (!clientIdInput.trim()) {
+      setOauthFeedback({
+        type: 'error',
+        message: 'Please enter your Todoist Client ID before authorizing.',
+      });
+      return;
+    }
+
+    setIsAuthorizing(true);
+    setOauthFeedback(null);
+
+    try {
+      // Save client ID (and secret if provided) first
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: clientIdInput.trim(),
+          clientSecret: clientSecretInput.trim() || undefined,
+        }),
+      });
+
+      const redirectUri = `${window.location.origin}/api/auth/callback`;
+      const authUrl = `https://todoist.com/oauth/authorize?client_id=${encodeURIComponent(
+        clientIdInput.trim()
+      )}&scope=data:read_write,data:delete&state=freeflow&redirect_uri=${encodeURIComponent(
+        redirectUri
+      )}`;
+
+      window.location.href = authUrl;
+    } catch (err: any) {
+      setOauthFeedback({
+        type: 'error',
+        message: `Failed to initiate authorization: ${err.message}`,
+      });
+      setIsAuthorizing(false);
+    }
+  };
+
   // Run Simulator
   const handleRunSimulator = async () => {
     if (!simTask) {
@@ -260,15 +419,29 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Supabase Connected
+                Supabase
               </span>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${
-                settings.hasToken 
-                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                  : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-              }`}>
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${
+                  settings.hasToken
+                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                }`}
+              >
                 <span className={`w-1.5 h-1.5 rounded-full ${settings.hasToken ? 'bg-indigo-400' : 'bg-amber-400'}`} />
-                {settings.hasToken ? 'Todoist Active' : 'Todoist Token Required'}
+                {settings.hasToken ? 'API Token' : 'No API Token'}
+              </span>
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${
+                  settings.isOAuthActive
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${settings.isOAuthActive ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                />
+                {settings.isOAuthActive ? 'Webhooks Live' : 'OAuth Unlinked'}
               </span>
             </div>
 
@@ -283,7 +456,47 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {/* Global OAuth / Alert Banners */}
+        {oauthBanner && (
+          <div
+            className={`p-4 rounded-xl border flex items-center justify-between text-xs transition shadow-sm ${
+              oauthBanner.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                : oauthBanner.type === 'info'
+                ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300'
+                : 'bg-red-500/10 border-red-500/20 text-red-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 shrink-0" />
+              <span>{oauthBanner.message}</span>
+            </div>
+            <button
+              onClick={() => setOauthBanner(null)}
+              className="text-slate-400 hover:text-white text-xs font-bold px-2 py-1"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {!settings.isOAuthActive && !oauthBanner && (
+          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200">
+            <div className="flex items-center gap-2.5">
+              <Radio className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+              <span>
+                <strong>Action Required for Real-Time Sync:</strong> Todoist only delivers webhooks for accounts that have authorized the App.
+              </span>
+            </div>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-lg shrink-0 transition"
+            >
+              Link App in Settings →
+            </button>
+          </div>
+        )}
         {/* KPI Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-sm relative overflow-hidden">
@@ -752,21 +965,192 @@ export default function Dashboard() {
         {/* TAB 5: Settings & Todoist Sync */}
         {activeTab === 'settings' && (
           <div className="space-y-6">
-            {/* Todoist Token Setup */}
+            {/* Real-time Webhooks & OAuth App Setup */}
+            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                    <Radio className="w-5 h-5 text-indigo-400" />
+                    Todoist OAuth App & Real-Time Webhooks
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Todoist requires your application to be authorized by your account so it knows where to dispatch live completion webhooks.
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border shrink-0 ${
+                    settings.isOAuthActive
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      settings.isOAuthActive ? 'bg-emerald-400' : 'bg-amber-400'
+                    }`}
+                  />
+                  {settings.isOAuthActive ? 'App Linked & Webhooks Active' : 'Authorization Required'}
+                </span>
+              </div>
+
+              {settings.isOAuthActive && (
+                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>
+                    Your Todoist account is connected! When you check off tasks in Todoist (mobile, desktop, or web), freeFlow will immediately catch the webhook, increment streaks, and recreate habits.
+                  </span>
+                </div>
+              )}
+
+              {/* Form to enter Client ID and Client Secret */}
+              <form onSubmit={handleSaveOAuthSettings} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                      Todoist Client ID:
+                    </label>
+                    <input
+                      type="text"
+                      value={clientIdInput}
+                      onChange={(e) => setClientIdInput(e.target.value)}
+                      placeholder="e.g. 0123456789abcdef"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono placeholder:text-slate-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                      Todoist Client Secret:
+                    </label>
+                    <input
+                      type="password"
+                      value={clientSecretInput}
+                      onChange={(e) => setClientSecretInput(e.target.value)}
+                      placeholder={
+                        settings.maskedClientSecret
+                          ? `Saved (${settings.maskedClientSecret})`
+                          : 'Paste Todoist Client Secret'
+                      }
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-white font-mono placeholder:text-slate-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleAuthorizeOAuth}
+                    disabled={isAuthorizing || !clientIdInput.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white text-sm font-semibold transition flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+                  >
+                    {isAuthorizing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    {settings.isOAuthActive ? 'Re-link & Authorize App in Todoist' : 'Authorize & Link App in Todoist'}
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSavingOAuth}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-sm font-semibold transition flex items-center gap-2"
+                  >
+                    {isSavingOAuth ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Save Credentials Only
+                  </button>
+                </div>
+              </form>
+
+              {oauthFeedback && (
+                <div
+                  className={`text-xs p-3 rounded-xl border ${
+                    oauthFeedback.type === 'success'
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                      : 'bg-red-500/10 border-red-500/20 text-red-300'
+                  }`}
+                >
+                  {oauthFeedback.message}
+                </div>
+              )}
+
+              {/* Developer Console Configuration Box */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300">
+                    Required Settings for your{' '}
+                    <a
+                      href="https://developer.todoist.com/appconsole.html"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-indigo-400 hover:underline inline-flex items-center gap-1"
+                    >
+                      Todoist Developer Console <ExternalLink className="w-3 h-3" />
+                    </a>:
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-slate-400">
+                      <span>OAuth redirect URL</span>
+                      <button
+                        onClick={() =>
+                          copyToClipboard(
+                            `${typeof window !== 'undefined' ? window.location.origin : 'https://freeflow.mkshp.dev'}/api/auth/callback`,
+                            'redirect'
+                          )
+                        }
+                        className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                      >
+                        {copiedKey === 'redirect' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        {copiedKey === 'redirect' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <code className="text-indigo-300 font-mono text-[11px] block break-all">
+                      {typeof window !== 'undefined' ? window.location.origin : 'https://freeflow.mkshp.dev'}/api/auth/callback
+                    </code>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-slate-400">
+                      <span>Webhook callback URL</span>
+                      <button
+                        onClick={() =>
+                          copyToClipboard(
+                            `${typeof window !== 'undefined' ? window.location.origin : 'https://freeflow.mkshp.dev'}/api/webhooks/todoist`,
+                            'webhook'
+                          )
+                        }
+                        className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                      >
+                        {copiedKey === 'webhook' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        {copiedKey === 'webhook' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <code className="text-indigo-300 font-mono text-[11px] block break-all">
+                      {typeof window !== 'undefined' ? window.location.origin : 'https://freeflow.mkshp.dev'}/api/webhooks/todoist
+                    </code>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-400">
+                  <strong>Watched events:</strong> In Todoist App settings, ensure <code className="text-indigo-300">item:completed</code>, <code className="text-indigo-300">item:added</code>, and <code className="text-indigo-300">item:deleted</code> are checked.
+                </p>
+              </div>
+            </div>
+
+            {/* Todoist Personal API Token (Fallback) */}
             <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
               <h2 className="text-base font-semibold text-white flex items-center gap-2">
                 <Settings className="w-5 h-5 text-indigo-400" />
-                Todoist API Integration
+                Personal API Token (Manual Fallback)
               </h2>
               <p className="text-xs text-slate-400">
-                To enable two-way sync and automatic recreation in your Todoist account, paste your Personal API token below.
+                The Personal API Token allows freeFlow to make direct REST API requests. It is automatically filled when you complete the OAuth authorization above, or you can paste one manually.
               </p>
 
               {settings.hasToken && (
                 <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span>
-                    Todoist token configured: <strong className="font-mono">{settings.maskedToken}</strong>
+                    API token active: <strong className="font-mono">{settings.maskedToken}</strong>
                   </span>
                 </div>
               )}
@@ -799,49 +1183,6 @@ export default function Dashboard() {
                   {tokenFeedback.message}
                 </div>
               )}
-
-              <div className="text-xs text-slate-400 space-y-1">
-                <p>
-                  <strong>Where to get your token:</strong> In Todoist web or desktop app, go to{' '}
-                  <span className="text-indigo-300">Settings → Integrations → Developer</span> and copy your{' '}
-                  <strong>API token</strong>.
-                </p>
-              </div>
-            </div>
-
-            {/* Todoist Webhook Configuration Guide */}
-            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <Radio className="w-5 h-5 text-indigo-400" />
-                Configuring Real-Time Todoist Webhooks
-              </h2>
-              <p className="text-xs text-slate-400">
-                To receive live webhooks directly from Todoist when you complete tasks:
-              </p>
-
-              <ol className="text-xs text-slate-300 space-y-2 list-decimal list-inside">
-                <li>
-                  Go to the{' '}
-                  <a
-                    href="https://developer.todoist.com/appconsole.html"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-indigo-400 hover:underline inline-flex items-center gap-1"
-                  >
-                    Todoist App Console <ExternalLink className="w-3 h-3" />
-                  </a>{' '}
-                  and create a new App.
-                </li>
-                <li>
-                  In the <strong>Webhook callback URL</strong> field, enter your public deployment URL:
-                  <div className="my-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-indigo-300 select-all">
-                    https://your-domain.com/api/webhooks/todoist
-                  </div>
-                </li>
-                <li>
-                  Under <strong>Watched events</strong>, check <code>item:completed</code>, <code>item:added</code>, and <code>item:deleted</code>.
-                </li>
-              </ol>
             </div>
 
             {/* Supabase Schema Reference */}

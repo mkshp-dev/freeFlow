@@ -43,6 +43,80 @@ export async function saveTodoistToken(token: string): Promise<void> {
 }
 
 /**
+ * Get Todoist OAuth Client ID from DB or env
+ */
+export async function getTodoistClientId(): Promise<string | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'TODOIST_CLIENT_ID')
+      .maybeSingle();
+
+    if (!error && data?.value) {
+      return data.value;
+    }
+  } catch (err) {}
+  return process.env.TODOIST_CLIENT_ID || null;
+}
+
+/**
+ * Save Todoist OAuth Client ID to DB
+ */
+export async function saveTodoistClientId(clientId: string): Promise<void> {
+  const { error } = await supabaseAdmin.from('app_settings').upsert(
+    {
+      key: 'TODOIST_CLIENT_ID',
+      value: clientId.trim(),
+      description: 'Todoist OAuth Client ID',
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  );
+
+  if (error) {
+    throw new Error(`Failed to save client ID to database: ${error.message}`);
+  }
+}
+
+/**
+ * Get Todoist OAuth Client Secret from DB or env
+ */
+export async function getTodoistClientSecret(): Promise<string | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'TODOIST_CLIENT_SECRET')
+      .maybeSingle();
+
+    if (!error && data?.value) {
+      return data.value;
+    }
+  } catch (err) {}
+  return process.env.TODOIST_CLIENT_SECRET || null;
+}
+
+/**
+ * Save Todoist OAuth Client Secret to DB
+ */
+export async function saveTodoistClientSecret(clientSecret: string): Promise<void> {
+  const { error } = await supabaseAdmin.from('app_settings').upsert(
+    {
+      key: 'TODOIST_CLIENT_SECRET',
+      value: clientSecret.trim(),
+      description: 'Todoist OAuth Client Secret',
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  );
+
+  if (error) {
+    throw new Error(`Failed to save client secret to database: ${error.message}`);
+  }
+}
+
+/**
  * Creates a task in Todoist using REST API v2
  */
 export async function createTodoistTask(taskData: {
@@ -144,7 +218,7 @@ export async function verifyTodoistWebhookSignature(
   signatureHeader: string | null,
   clientSecret?: string
 ): Promise<boolean> {
-  const secret = clientSecret || process.env.TODOIST_CLIENT_SECRET;
+  const secret = clientSecret || (await getTodoistClientSecret());
   if (!secret || !signatureHeader) {
     // If secret is not set, we allow the request in development/demo mode but log warning
     return true;
@@ -177,4 +251,78 @@ export async function verifyTodoistWebhookSignature(
     console.error('Signature verification error:', e);
     return false;
   }
+}
+
+/**
+ * Exchanges a temporary OAuth authorization code for a permanent access token
+ * at https://api.todoist.com/oauth/access_token.
+ * This officially registers the user as having "installed" the app,
+ * which activates Todoist webhook dispatching for their account!
+ */
+export async function exchangeTodoistOAuthCode(
+  code: string,
+  redirectUri?: string,
+  providedClientId?: string,
+  providedClientSecret?: string
+) {
+  const clientId = providedClientId || (await getTodoistClientId());
+  const clientSecret = providedClientSecret || (await getTodoistClientSecret());
+
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      'Missing Todoist Client ID or Client Secret. Please configure your App credentials first.'
+    );
+  }
+
+  const params = new URLSearchParams({
+    client_id: clientId.trim(),
+    client_secret: clientSecret.trim(),
+    code: code.trim(),
+  });
+
+  if (redirectUri) {
+    params.append('redirect_uri', redirectUri);
+  }
+
+  const response = await fetch('https://api.todoist.com/oauth/access_token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Todoist OAuth exchange failed (${response.status}): ${err}`);
+  }
+
+  const data = (await response.json()) as { access_token?: string; token_type?: string };
+  if (!data.access_token) {
+    throw new Error('Todoist OAuth response did not contain an access_token.');
+  }
+
+  // 1. Save access token to database
+  await saveTodoistToken(data.access_token);
+
+  // 2. Save client ID if provided
+  if (providedClientId) {
+    await saveTodoistClientId(providedClientId);
+  }
+
+  // 3. Save client secret if provided
+  if (providedClientSecret) {
+    await saveTodoistClientSecret(providedClientSecret);
+  }
+
+  // 4. Log the milestone in webhook_logs
+  await supabaseAdmin.from('webhook_logs').insert({
+    event_name: 'oauth:authorized',
+    source: 'todoist_oauth',
+    payload: { token_type: data.token_type, timestamp: new Date().toISOString() },
+    processed_status: 'success',
+    action_taken: 'Todoist OAuth App successfully linked and installed! Webhooks are now activated.',
+  });
+
+  return data;
 }
