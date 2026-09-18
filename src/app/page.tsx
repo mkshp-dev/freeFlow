@@ -34,12 +34,15 @@ import {
   Clock,
   Award,
   ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { Task, Workflow, WebhookLog } from '@/types';
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tasks' | 'workflows' | 'logs' | 'simulator' | 'settings'>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
@@ -560,19 +563,29 @@ export default function Dashboard() {
               </nav>
             </div>
 
-            {/* Drawer Footer */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                <span>Theme</span>
-                <button
-                  onClick={toggleTheme}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium"
-                >
-                  {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
-                  {theme === 'dark' ? 'Light' : 'Dark'}
-                </button>
+            {/* Drawer Footer: Health Indicators & Version */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400">Database</span>
+                  <span className="flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Supabase
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400">Todoist Webhook</span>
+                  <span
+                    className={`flex items-center gap-1 font-semibold ${
+                      settings.isOAuthActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${settings.isOAuthActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                    {settings.isOAuthActive ? 'Active' : 'Unlinked'}
+                  </span>
+                </div>
               </div>
-              <div className="text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
+              <div className="text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-between px-1">
                 <span>v0.1.0 • Edge Runtime</span>
                 <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -584,21 +597,34 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Desktop Persistent Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/70 backdrop-blur-xl shrink-0 sticky top-0 h-screen z-40 transition-colors">
-        {/* Brand Area */}
-        <div className="h-16 px-6 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-md shadow-indigo-500/20">
-            <RefreshCw className="w-5 h-5 text-white" />
+      {/* Desktop Persistent Sidebar (Toggleable) */}
+      <aside
+        className={`hidden lg:flex lg:flex-col border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/70 backdrop-blur-xl shrink-0 sticky top-0 h-screen z-40 transition-all duration-300 ${
+          sidebarOpen ? 'w-64' : 'w-0 overflow-hidden border-r-0 opacity-0 pointer-events-none'
+        }`}
+      >
+        {/* Brand Area with Collapse Button */}
+        <div className="h-16 px-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-md shadow-indigo-500/20">
+              <RefreshCw className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <span className="font-bold text-base tracking-tight bg-gradient-to-r from-indigo-900 via-indigo-700 to-violet-800 dark:from-white dark:via-slate-100 dark:to-slate-400 bg-clip-text text-transparent">
+                freeFlow
+              </span>
+              <span className="block text-[10px] uppercase font-semibold tracking-wider text-slate-400">
+                Habit Engine
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="font-bold text-base tracking-tight bg-gradient-to-r from-indigo-900 via-indigo-700 to-violet-800 dark:from-white dark:via-slate-100 dark:to-slate-400 bg-clip-text text-transparent">
-              freeFlow
-            </span>
-            <span className="block text-[10px] uppercase font-semibold tracking-wider text-slate-400">
-              Habit Engine
-            </span>
-          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            title="Collapse sidebar"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Navigation */}
@@ -639,7 +665,7 @@ export default function Dashboard() {
           })}
         </div>
 
-        {/* Sidebar Footer Status & Theme Toggle */}
+        {/* Sidebar Footer: Health Indicators & Version */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
           {/* Engine Status Pill */}
           <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1.5">
@@ -657,23 +683,19 @@ export default function Dashboard() {
                   settings.isOAuthActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
                 }`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${settings.isOAuthActive ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${settings.isOAuthActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
                 {settings.isOAuthActive ? 'Active' : 'Unlinked'}
               </span>
             </div>
           </div>
 
-          {/* Theme switch button */}
-          <button
-            onClick={toggleTheme}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-xs text-slate-700 dark:text-slate-300 transition"
-          >
-            <div className="flex items-center gap-2">
-              {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
-              <span>{theme === 'dark' ? 'Light Theme' : 'Dark Theme'}</span>
-            </div>
-            <span className="text-[10px] font-semibold uppercase text-slate-400">{theme}</span>
-          </button>
+          <div className="text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-between px-1">
+            <span>v0.1.0 • Edge Runtime</span>
+            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
+          </div>
         </div>
       </aside>
 
@@ -682,13 +704,39 @@ export default function Dashboard() {
         {/* Top Navbar */}
         <header className="h-16 border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/50 backdrop-blur sticky top-0 z-30 px-4 sm:px-6 lg:px-8 flex items-center justify-between transition-colors">
           <div className="flex items-center gap-3">
+            {/* Sidebar toggle button (mobile drawer & desktop open/close) */}
             <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="p-2 rounded-xl lg:hidden bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition"
-              aria-label="Open navigation menu"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                  setMobileMenuOpen(!mobileMenuOpen);
+                } else {
+                  setSidebarOpen(!sidebarOpen);
+                }
+              }}
+              aria-label="Toggle sidebar"
+              title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition flex items-center justify-center"
             >
-              <Menu className="w-5 h-5" />
+              <span className="hidden lg:block">
+                {sidebarOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
+              </span>
+              <span className="lg:hidden">
+                <Menu className="w-5 h-5" />
+              </span>
             </button>
+
+            {/* Brand logo when sidebar is closed on desktop */}
+            {!sidebarOpen && (
+              <div className="hidden lg:flex items-center gap-2.5 mr-2">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-sm">
+                  <RefreshCw className="w-4 h-4 text-white" />
+                </div>
+                <span className="font-bold text-sm tracking-tight bg-gradient-to-r from-indigo-900 via-indigo-700 to-violet-800 dark:from-white dark:via-slate-100 dark:to-slate-400 bg-clip-text text-transparent">
+                  freeFlow
+                </span>
+              </div>
+            )}
+
             <div>
               <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white capitalize flex items-center gap-2">
                 {activeTab === 'dashboard' && 'Command Dashboard'}
@@ -702,22 +750,6 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Live Sync Status */}
-            <div
-              className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
-                settings.isOAuthActive
-                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  settings.isOAuthActive ? 'bg-emerald-500 dark:bg-emerald-400 animate-pulse' : 'bg-amber-500 dark:bg-amber-400'
-                }`}
-              />
-              <span>{settings.isOAuthActive ? 'Webhooks Live' : 'OAuth Unlinked'}</span>
-            </div>
-
             {/* Refresh Data Button */}
             <button
               onClick={loadData}
@@ -732,7 +764,7 @@ export default function Dashboard() {
               onClick={toggleTheme}
               aria-label="Toggle theme"
               title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60 transition shadow-xs flex items-center justify-center"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
             </button>
