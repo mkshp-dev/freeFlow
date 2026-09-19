@@ -2,13 +2,14 @@ export type TaskStatus = 'pending' | 'completed' | 'archived';
 
 export type WorkflowType = 'repeated_tasks' | 'immediate_recreate' | 'interval_recreate' | 'streak_only' | 'none';
 
-export type DelayMode = 'immediately' | 'after_hours' | 'tomorrow_at' | 'exact_datetime';
+export type DelayMode = 'immediately' | 'after_hours' | 'tomorrow_at' | 'after_days_at' | 'exact_datetime';
 
 export interface WorkflowDelayConfig {
   mode: DelayMode;
   hours?: number; // Fractional hours, e.g. 0.5, 1.5, 2.5, 8
-  time?: string; // HH:MM, e.g. '09:00'
-  datetime?: string; // YYYY:MM:DD HH:MM or YYYY-MM-DD HH:MM
+  days?: number; // Days ahead, e.g. 1, 2, 4, 7
+  time?: string; // HH:MM, e.g. '09:00', '17:00'
+  datetime?: string; // Legacy / exact datetime if used
 }
 
 export interface TaskWorkflowConfig {

@@ -101,6 +101,7 @@ export default function Dashboard() {
   const [newTaskWorkflow, setNewTaskWorkflow] = useState('repeated_tasks');
   const [newDelayMode, setNewDelayMode] = useState<DelayMode>('immediately');
   const [newDelayHours, setNewDelayHours] = useState('1.5');
+  const [newDelayDays, setNewDelayDays] = useState('4');
   const [newDelayTime, setNewDelayTime] = useState('09:00');
   const [newDelayDateTime, setNewDelayDateTime] = useState('');
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -265,6 +266,11 @@ export default function Dashboard() {
     if (delay.mode === 'tomorrow_at') {
       return `Tomorrow at ${delay.time || '09:00'}`;
     }
+    if (delay.mode === 'after_days_at') {
+      const days = delay.days ?? 4;
+      const dayStr = days === 1 ? '1 day' : `${days} days`;
+      return `+${dayStr} at ${delay.time || '17:00'}`;
+    }
     if (delay.mode === 'exact_datetime') {
       return `At ${delay.datetime}`;
     }
@@ -310,6 +316,9 @@ export default function Dashboard() {
           delayConfig.hours = parseFloat(newDelayHours) || 1;
         } else if (newDelayMode === 'tomorrow_at') {
           delayConfig.time = newDelayTime || '09:00';
+        } else if (newDelayMode === 'after_days_at') {
+          delayConfig.days = parseInt(newDelayDays, 10) || 4;
+          delayConfig.time = newDelayTime || '17:00';
         } else if (newDelayMode === 'exact_datetime') {
           delayConfig.datetime = newDelayDateTime.trim();
         }
@@ -337,6 +346,7 @@ export default function Dashboard() {
         setNewTaskDesc('');
         setNewDelayMode('immediately');
         setNewDelayHours('1.5');
+        setNewDelayDays('4');
         setNewDelayTime('09:00');
         setNewDelayDateTime('');
         loadData();
@@ -1431,12 +1441,12 @@ export default function Dashboard() {
                           <select
                             value={newDelayMode}
                             onChange={(e) => setNewDelayMode(e.target.value as DelayMode)}
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-medium"
                           >
                             <option value="immediately">Immediately (0 delay)</option>
                             <option value="after_hours">After x hours</option>
                             <option value="tomorrow_at">Tomorrow at HH:MM</option>
-                            <option value="exact_datetime">Exact Date & Time (YYYY:MM:DD HH:MM)</option>
+                            <option value="after_days_at">+ x Days at HH:MM (e.g. +4 days at 5 PM)</option>
                           </select>
 
                           {newDelayMode === 'after_hours' && (
@@ -1466,15 +1476,33 @@ export default function Dashboard() {
                             </div>
                           )}
 
-                          {newDelayMode === 'exact_datetime' && (
-                            <div>
-                              <input
-                                type="text"
-                                value={newDelayDateTime}
-                                onChange={(e) => setNewDelayDateTime(e.target.value)}
-                                placeholder="2026:09:20 09:00"
-                                className="w-full px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 placeholder:text-slate-400"
-                              />
+                          {newDelayMode === 'after_days_at' && (
+                            <div className="space-y-1.5 pt-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-slate-500 w-12 shrink-0">After:</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="365"
+                                  value={newDelayDays}
+                                  onChange={(e) => setNewDelayDays(e.target.value)}
+                                  placeholder="4"
+                                  className="w-16 px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-semibold"
+                                />
+                                <span className="text-[11px] text-slate-500">days</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-slate-500 w-12 shrink-0">At time:</span>
+                                <input
+                                  type="time"
+                                  value={newDelayTime}
+                                  onChange={(e) => setNewDelayTime(e.target.value)}
+                                  className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-semibold"
+                                />
+                              </div>
+                              <div className="text-[10px] text-indigo-600 dark:text-indigo-400">
+                                Recreates on completion + {newDelayDays || 4} days at {newDelayTime || '17:00'}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1613,12 +1641,12 @@ export default function Dashboard() {
                         <select
                           value={newDelayMode}
                           onChange={(e) => setNewDelayMode(e.target.value as DelayMode)}
-                          className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white"
+                          className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-medium"
                         >
                           <option value="immediately">Immediately (0 delay)</option>
                           <option value="after_hours">After x hours</option>
                           <option value="tomorrow_at">Tomorrow at HH:MM</option>
-                          <option value="exact_datetime">Exact Date & Time (YYYY:MM:DD HH:MM)</option>
+                          <option value="after_days_at">+ x Days at HH:MM (e.g. +4 days at 5 PM)</option>
                         </select>
                       </div>
 
@@ -1656,15 +1684,36 @@ export default function Dashboard() {
                           </div>
                         )}
 
-                        {newDelayMode === 'exact_datetime' && (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={newDelayDateTime}
-                              onChange={(e) => setNewDelayDateTime(e.target.value)}
-                              placeholder="2026:09:20 09:00"
-                              className="w-full max-w-xs px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 placeholder:text-slate-400"
-                            />
+                        {newDelayMode === 'after_days_at' && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs text-slate-500">After</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="365"
+                                  value={newDelayDays}
+                                  onChange={(e) => setNewDelayDays(e.target.value)}
+                                  placeholder="4"
+                                  className="w-16 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-semibold"
+                                />
+                                <span className="text-xs text-slate-500">days</span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs text-slate-500">at</span>
+                                <input
+                                  type="time"
+                                  value={newDelayTime}
+                                  onChange={(e) => setNewDelayTime(e.target.value)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-semibold"
+                                />
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-indigo-600 dark:text-indigo-400">
+                              When checked off, recreated on completed date + {newDelayDays || 4} days at {newDelayTime || '17:00'}.
+                            </p>
                           </div>
                         )}
                       </div>
@@ -1867,8 +1916,8 @@ export default function Dashboard() {
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Schedules task for tomorrow at chosen time</div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                      <div className="font-semibold text-indigo-600 dark:text-indigo-400">YYYY:MM:DD HH:MM</div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Exact future date & time recreation target</div>
+                      <div className="font-semibold text-indigo-600 dark:text-indigo-400">+ x Days at HH:MM</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Recreates on completed date + x days at target time (e.g. +4 days at 5 PM)</div>
                     </div>
                   </div>
                 </div>

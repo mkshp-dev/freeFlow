@@ -42,6 +42,19 @@ export function calculateScheduledRecreationTime(delayConfig?: WorkflowDelayConf
     return tomorrow;
   }
 
+  if (delayConfig.mode === 'after_days_at') {
+    const days = Math.max(1, Math.round(Number(delayConfig.days) || 1));
+    const timeStr = delayConfig.time || '17:00';
+    const [hStr, mStr] = timeStr.split(':');
+    const h = parseInt(hStr, 10) || 0;
+    const m = parseInt(mStr, 10) || 0;
+
+    const targetDate = new Date(now);
+    targetDate.setDate(targetDate.getDate() + days);
+    targetDate.setHours(h, m, 0, 0);
+    return targetDate;
+  }
+
   if (delayConfig.mode === 'exact_datetime') {
     if (!delayConfig.datetime) return null;
     // Normalize format "YYYY:MM:DD HH:MM" or "YYYY-MM-DD HH:MM" to valid ISO
