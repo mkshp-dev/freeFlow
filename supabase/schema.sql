@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     todoist_project_id TEXT,
     priority INTEGER DEFAULT 1,
     streak_count INTEGER NOT NULL DEFAULT 0,
-    workflow_type TEXT NOT NULL DEFAULT 'repeated_tasks' CHECK (workflow_type IN ('repeated_tasks', 'immediate_recreate', 'interval_recreate', 'streak_only', 'none')),
+    workflow_type TEXT NOT NULL DEFAULT 'repeated_tasks' CHECK (workflow_type IN ('repeated_tasks', 'chained_tasks', 'immediate_recreate', 'interval_recreate', 'streak_only', 'none')),
     workflow_config JSONB DEFAULT '{"delay": {"mode": "immediately"}}'::jsonb,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     last_completed_at TIMESTAMPTZ,

@@ -41,8 +41,11 @@ import {
   LogOut,
   KeyRound,
   Calendar,
+  Link2,
+  ListOrdered,
+  ArrowRightCircle,
 } from 'lucide-react';
-import { Task, Workflow, WebhookLog, DelayMode, WorkflowDelayConfig } from '@/types';
+import { Task, Workflow, WebhookLog, DelayMode, WorkflowDelayConfig, ChainStep } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import AuthModal, { AuthMode } from '@/components/AuthModal';
 
@@ -107,6 +110,16 @@ export default function Dashboard() {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [recreatingTaskId, setRecreatingTaskId] = useState<string | null>(null);
 
+  // Chained Tasks state
+  const [chainNameInput, setChainNameInput] = useState('');
+  const [chainStepsInput, setChainStepsInput] = useState<string[]>([
+    'Draft initial outline',
+    'Write complete content',
+    'Final review & publish',
+  ]);
+  const [chainLoopInput, setChainLoopInput] = useState(false);
+  const [isCreatingChain, setIsCreatingChain] = useState(false);
+
   // Simulator state
   const [simTask, setSimTask] = useState<string>('');
   const [simCloseInTodoist, setSimCloseInTodoist] = useState(true);
@@ -123,21 +136,24 @@ export default function Dashboard() {
       const currentUserId = typeof overrideUserId === 'string' ? overrideUserId : user?.id;
       const tasksUrl = currentUserId ? `/api/tasks?userId=${encodeURIComponent(currentUserId)}` : '/api/tasks';
 
-      const [tasksRes, logsRes, statsRes, settingsRes] = await Promise.all([
+      const [tasksRes, logsRes, statsRes, settingsRes, workflowsRes] = await Promise.all([
         fetch(tasksUrl),
         fetch('/api/webhooks/logs'),
         fetch('/api/stats'),
         fetch('/api/settings'),
+        fetch('/api/workflows'),
       ]);
 
       const tasksData = await tasksRes.json();
       const logsData = await logsRes.json();
       const statsData = await statsRes.json();
       const settingsData = await settingsRes.json();
+      const workflowsData = await workflowsRes.json();
 
       if (tasksData.tasks) setTasks(tasksData.tasks);
       if (logsData.logs) setWebhookLogs(logsData.logs);
       if (statsData) setStats(statsData);
+      if (workflowsData.workflows) setWorkflows(workflowsData.workflows);
       if (settingsData) {
         setSettings(settingsData);
         if (settingsData.clientId) {
@@ -302,6 +318,83 @@ export default function Dashboard() {
     }
   };
 
+  // Chained Tasks Step Helpers
+  const handleAddChainStep = () => {
+    setChainStepsInput((prev) => [...prev, '']);
+  };
+
+  const handleUpdateChainStep = (index: number, val: string) => {
+    setChainStepsInput((prev) => {
+      const next = [...prev];
+      next[index] = val;
+      return next;
+    });
+  };
+
+  const handleRemoveChainStep = (index: number) => {
+    if (chainStepsInput.length <= 2) return;
+    setChainStepsInput((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleCreateChainedWorkflow = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const validSteps = chainStepsInput.map((s) => s.trim()).filter(Boolean);
+    if (!chainNameInput.trim()) {
+      alert('Please enter a name for your chained workflow.');
+      return;
+    }
+    if (validSteps.length < 2) {
+      alert('Please specify at least 2 steps for the chain.');
+      return;
+    }
+
+    setIsCreatingChain(true);
+    try {
+      const res = await fetch('/api/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: chainNameInput.trim(),
+          action_type: 'chained_tasks',
+          loop: chainLoopInput,
+          steps: validSteps.map((title, i) => ({
+            id: `step-${i + 1}`,
+            title,
+          })),
+          user_id: user?.id || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setChainNameInput('');
+        setChainStepsInput(['Draft initial outline', 'Write complete content', 'Final review & publish']);
+        setChainLoopInput(false);
+        loadData();
+      } else {
+        alert(data.error || 'Failed to create chained workflow');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsCreatingChain(false);
+    }
+  };
+
+  const handleDeleteWorkflow = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this workflow? Any active task will be archived.')) return;
+    try {
+      const res = await fetch(`/api/workflows?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        loadData();
+      }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   // Handle task creation
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,6 +402,43 @@ export default function Dashboard() {
 
     setIsCreatingTask(true);
     try {
+      if (newTaskWorkflow === 'chained_tasks') {
+        const validSteps = chainStepsInput.map((s) => s.trim()).filter(Boolean);
+        if (validSteps.length < 2) {
+          alert('Chained tasks workflow requires at least 2 sequential steps.');
+          setIsCreatingTask(false);
+          return;
+        }
+
+        const res = await fetch('/api/workflows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: newTaskTitle.trim(),
+            action_type: 'chained_tasks',
+            loop: chainLoopInput,
+            steps: validSteps.map((title, i) => ({
+              id: `step-${i + 1}`,
+              title,
+            })),
+            user_id: user?.id || null,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          setNewTaskTitle('');
+          setNewTaskDesc('');
+          setChainStepsInput(['Draft initial outline', 'Write complete content', 'Final review & publish']);
+          setChainLoopInput(false);
+          loadData();
+          return;
+        } else {
+          alert(data.error || 'Failed to create chained tasks workflow');
+          return;
+        }
+      }
+
       let delayConfig: WorkflowDelayConfig | undefined;
       if (newTaskWorkflow === 'repeated_tasks' || newTaskWorkflow === 'immediate_recreate') {
         delayConfig = { mode: newDelayMode };
@@ -1287,6 +1417,15 @@ export default function Dashboard() {
                                         <span className="text-slate-400 dark:text-slate-500 font-normal">• {getDelayLabel(task)}</span>
                                       </span>
                                     )}
+                                    {task.workflow_type === 'chained_tasks' && (
+                                      <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                                        <Link2 className="w-3 h-3 text-purple-500" />
+                                        <span>Chained</span>
+                                        <span className="text-slate-400 dark:text-slate-500 font-normal">
+                                          • Step {(task.workflow_config?.step_index ?? 0) + 1}/{task.workflow_config?.total_steps || task.workflow_config?.steps?.length || '?'}
+                                        </span>
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-2 mt-1">
                                     <div className="w-24 sm:w-32 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
@@ -1427,10 +1566,64 @@ export default function Dashboard() {
                           className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-medium"
                         >
                           <option value="repeated_tasks">Workflow: Repeated tasks</option>
+                          <option value="chained_tasks">Workflow: Chained Tasks (Sequential)</option>
                           <option value="streak_only">Workflow: Streak Only</option>
                           <option value="none">Standard Task (No workflow)</option>
                         </select>
                       </div>
+
+                      {newTaskWorkflow === 'chained_tasks' && (
+                        <div className="p-3 rounded-xl bg-purple-500/5 dark:bg-purple-950/20 border border-purple-500/20 space-y-2.5">
+                          <label className="block text-[11px] font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                            <Link2 className="w-3.5 h-3.5 text-purple-500" />
+                            Ordered Steps in Chain:
+                          </label>
+                          <div className="space-y-1.5">
+                            {chainStepsInput.map((step, sIdx) => (
+                              <div key={sIdx} className="flex items-center gap-1.5">
+                                <span className="w-5 h-5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-[10px] shrink-0">
+                                  {sIdx + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={step}
+                                  onChange={(e) => handleUpdateChainStep(sIdx, e.target.value)}
+                                  placeholder={`Step ${sIdx + 1}`}
+                                  className="w-full px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-purple-500"
+                                />
+                                {chainStepsInput.length > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveChainStep(sIdx)}
+                                    className="p-1 hover:text-red-500 text-slate-400 transition"
+                                    title="Remove step"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex items-center justify-between pt-1 text-[11px]">
+                            <button
+                              type="button"
+                              onClick={handleAddChainStep}
+                              className="text-purple-600 dark:text-purple-400 font-semibold hover:underline flex items-center gap-1"
+                            >
+                              <Plus className="w-3 h-3" /> Add Step
+                            </button>
+                            <label className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={chainLoopInput}
+                                onChange={(e) => setChainLoopInput(e.target.checked)}
+                                className="rounded text-purple-600 focus:ring-0"
+                              />
+                              <span>Loop chain</span>
+                            </label>
+                          </div>
+                        </div>
+                      )}
 
                       {(newTaskWorkflow === 'repeated_tasks' || newTaskWorkflow === 'immediate_recreate') && (
                         <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800/80 space-y-2">
@@ -1623,11 +1816,69 @@ export default function Dashboard() {
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white transition-colors"
                     >
                       <option value="repeated_tasks">Workflow: Repeated tasks</option>
+                      <option value="chained_tasks">Workflow: Chained Tasks (Sequential)</option>
                       <option value="streak_only">Workflow: Streak Tracking Only</option>
                       <option value="none">Standard Task (No workflow)</option>
                     </select>
                   </div>
                 </div>
+
+                {newTaskWorkflow === 'chained_tasks' && (
+                  <div className="p-4 rounded-xl bg-purple-500/5 dark:bg-purple-950/20 border border-purple-500/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                        <Link2 className="w-4 h-4 text-purple-500" />
+                        Chained Steps Sequence (Completed in this exact order):
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={chainLoopInput}
+                          onChange={(e) => setChainLoopInput(e.target.checked)}
+                          className="rounded text-purple-600 focus:ring-0"
+                        />
+                        <span>Loop chain (Restart after final step)</span>
+                      </label>
+                    </div>
+
+                    <div className="space-y-2">
+                      {chainStepsInput.map((step, sIdx) => (
+                        <div key={sIdx} className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs shrink-0">
+                            {sIdx + 1}
+                          </div>
+                          <input
+                            type="text"
+                            value={step}
+                            onChange={(e) => handleUpdateChainStep(sIdx, e.target.value)}
+                            placeholder={`Step ${sIdx + 1} task title`}
+                            className="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-purple-500"
+                            required
+                          />
+                          {chainStepsInput.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveChainStep(sIdx)}
+                              className="p-1.5 hover:bg-red-500/10 hover:text-red-500 text-slate-400 rounded-lg transition"
+                              title="Delete Step"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddChainStep}
+                      className="px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-xs font-semibold flex items-center gap-1.5 transition"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Step to Chain
+                    </button>
+                  </div>
+                )}
 
                 {(newTaskWorkflow === 'repeated_tasks' || newTaskWorkflow === 'immediate_recreate') && (
                   <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-3">
@@ -1774,6 +2025,15 @@ export default function Dashboard() {
                               <span className="text-slate-400 dark:text-slate-500 font-normal">• Delay: {getDelayLabel(task)}</span>
                             </span>
                           )}
+                          {task.workflow_type === 'chained_tasks' && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                              <Link2 className="w-3 h-3 text-purple-500" />
+                              <span>Chained</span>
+                              <span className="text-slate-400 dark:text-slate-500 font-normal">
+                                • Step {(task.workflow_config?.step_index ?? 0) + 1}/{task.workflow_config?.total_steps || task.workflow_config?.steps?.length || '?'}
+                              </span>
+                            </span>
+                          )}
                           {task.workflow_type === 'streak_only' && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20">
                               Streak Only
@@ -1788,6 +2048,18 @@ export default function Dashboard() {
                             </span>
                           )}
                         </div>
+
+                        {task.workflow_type === 'chained_tasks' && task.workflow_config?.steps && (
+                          <div className="text-xs text-purple-600 dark:text-purple-300 font-medium flex items-center gap-1.5 pt-0.5">
+                            <span className="text-slate-400 font-normal">Chain: {task.workflow_config.chain_name || task.title}</span>
+                            <span className="text-slate-400">•</span>
+                            <span className="text-slate-500 dark:text-slate-400">
+                              Next:{' '}
+                              {task.workflow_config.steps[(task.workflow_config.step_index ?? 0) + 1]?.title ||
+                                (task.workflow_config.loop ? `${task.workflow_config.steps[0]?.title} (Loop)` : 'Final step (Completes chain)')}
+                            </span>
+                          </div>
+                        )}
 
                         <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                           {task.todoist_id ? (
@@ -1844,49 +2116,353 @@ export default function Dashboard() {
         {/* TAB 2: Workflows */}
         {activeTab === 'workflows' && (
           <div className="space-y-6">
+            {/* Architecture Overview */}
             <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
               <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <GitFork className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 Workflow Engine Architecture
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Workflows automate actions triggered by Todoist webhook lifecycle events.
+                Event-driven automation triggered by Todoist webhook lifecycle events. FreeFlow tracks habits and orchestrates multi-step task pipelines.
               </p>
 
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Trigger */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 transition-colors">
-                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">1. Trigger Event</div>
-                  <div className="font-semibold text-slate-900 dark:text-white">item:completed</div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Fires via Todoist webhook whenever you check off a task in your Todoist app (mobile, desktop, or web).
-                  </p>
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Workflow 1: Repeated Tasks Flow */}
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-indigo-500/20 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Repeated Tasks Flow
+                    </span>
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                      Single Habit Loop
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1.5 font-mono">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-bold">1.</span>
+                      <span>Task checked off in Todoist (<code className="text-indigo-600 dark:text-indigo-400">item:completed</code>)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-bold">2.</span>
+                      <span>Streak incremented &amp; recreation delay evaluated</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-bold">3.</span>
+                      <span>Recreated immediately or scheduled for exact target time</span>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Condition */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 transition-colors">
-                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">2. Rule Evaluation</div>
-                  <div className="font-semibold text-slate-900 dark:text-white">Workflow = Repeated tasks</div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Engine matches task in Supabase DB by Todoist ID, validates workflow rules, increments streak counter, and calculates recreation schedule.
-                  </p>
-                </div>
-
-                {/* Action */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 transition-colors">
-                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">3. Action Executed</div>
-                  <div className="font-semibold text-emerald-600 dark:text-emerald-400">Recreate with Configured Delay</div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    If Delay = Immediately, spawns task in Todoist REST API right away. If delayed, schedules recreation and spawns when due.
-                  </p>
+                {/* Workflow 2: Chained Tasks Flow */}
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-purple-500/20 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Link2 className="w-3.5 h-3.5" />
+                      Chained Tasks Pipeline
+                    </span>
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                      Sequential Execution
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1.5 font-mono">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-bold">1.</span>
+                      <span>Step N completed in Todoist</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-bold">2.</span>
+                      <span>Engine advances pointer: <code className="text-purple-600 dark:text-purple-400">Step N → Step N+1</code></span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-bold">3.</span>
+                      <span>Step N+1 automatically opens in Todoist (or restarts if loop enabled)</span>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </div>
+
+            {/* Chained Tasks Workflow Builder */}
+            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800/80 pb-4">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Link2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                    Build a Chained Workflow
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Chain an ordered sequence of tasks. When you complete each task in Todoist, the workflow engine automatically spawns the next task in the chain.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20 w-fit">
+                  <ListOrdered className="w-3.5 h-3.5" />
+                  Sequential Pipeline
+                </span>
+              </div>
+
+              <form onSubmit={handleCreateChainedWorkflow} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                    Pipeline / Chain Name:
+                  </label>
+                  <input
+                    type="text"
+                    value={chainNameInput}
+                    onChange={(e) => setChainNameInput(e.target.value)}
+                    placeholder="e.g. Weekly Newsletter Release, Feature Launch, Morning Ritual"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-sm focus:outline-none focus:border-purple-500 text-slate-900 dark:text-white transition-colors"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Ordered Tasks Sequence (Minimum 2 steps):
+                    </label>
+                    <span className="text-xs text-slate-400">
+                      {chainStepsInput.length} steps configured
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {chainStepsInput.map((step, sIdx) => (
+                      <div key={sIdx} className="flex items-center gap-2">
+                        <span className="shrink-0 w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 font-bold text-xs flex items-center justify-center border border-purple-500/20">
+                          {sIdx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={step}
+                          onChange={(e) => handleUpdateChainStep(sIdx, e.target.value)}
+                          placeholder={`Step ${sIdx + 1} task title (e.g. ${
+                            sIdx === 0 ? 'Draft outline' : sIdx === 1 ? 'Write first draft' : 'Review & polish'
+                          })`}
+                          className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-purple-500 transition-colors"
+                          required
+                        />
+                        {chainStepsInput.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveChainStep(sIdx)}
+                            className="p-2 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-500/10 transition"
+                            title="Remove step"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddChainStep}
+                    className="mt-2 px-3 py-1.5 rounded-xl border border-dashed border-purple-500/40 hover:border-purple-500 text-purple-600 dark:text-purple-400 text-xs font-medium flex items-center gap-1.5 transition hover:bg-purple-500/5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Another Sequential Step
+                  </button>
+                </div>
+
+                <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/15 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="chainTabLoop"
+                      checked={chainLoopInput}
+                      onChange={(e) => setChainLoopInput(e.target.checked)}
+                      className="rounded border-slate-300 dark:border-slate-800 text-purple-600 focus:ring-0"
+                    />
+                    <label htmlFor="chainTabLoop" className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                      Loop pipeline indefinitely (restarts from Step 1 after final step completes)
+                    </label>
+                  </div>
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">
+                    {chainLoopInput ? 'Continuous loop' : 'Stops after final step'}
+                  </span>
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Launching will immediately create <strong className="text-slate-800 dark:text-slate-200">Step 1</strong> in your Todoist inbox.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={isCreatingChain}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md shadow-purple-500/20 transition cursor-pointer"
+                  >
+                    {isCreatingChain ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ArrowRightCircle className="w-4 h-4" />
+                    )}
+                    Launch Chained Workflow
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Active Chained Pipelines List */}
+            <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4 transition-colors">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                    <ListOrdered className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    Active Chained Pipelines
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Live ordered task pipelines being tracked and sequentially executed.
+                  </p>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                  {workflows.filter((w) => w.action_type === 'chained_tasks').length} Configured
+                </span>
+              </div>
+
+              {workflows.filter((w) => w.action_type === 'chained_tasks').length === 0 ? (
+                <div className="p-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 dark:text-slate-400 text-xs">
+                  No chained workflows created yet. Use the builder above to launch your first sequential pipeline!
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {workflows
+                    .filter((w) => w.action_type === 'chained_tasks')
+                    .map((wf) => {
+                      const steps: ChainStep[] = wf.config?.steps || [];
+                      const currentIndex: number = wf.config?.current_step_index ?? 0;
+                      const isComplete = wf.config?.status === 'completed' || currentIndex >= steps.length;
+                      const isLooped = Boolean(wf.config?.loop);
+                      const progressPercent = steps.length > 0
+                        ? isComplete
+                          ? 100
+                          : Math.min(100, Math.round((currentIndex / steps.length) * 100))
+                        : 0;
+
+                      return (
+                        <div
+                          key={wf.id}
+                          className="p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-purple-500/30 space-y-4 transition-colors"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-slate-900 dark:text-white text-sm">
+                                  {wf.name}
+                                </span>
+                                {isComplete ? (
+                                  <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium">
+                                    Finished
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-xs bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 font-medium">
+                                    Step {currentIndex + 1} of {steps.length} Active
+                                  </span>
+                                )}
+                                {isLooped && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">
+                                    Looping
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                {wf.description}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-end sm:self-center">
+                              <button
+                                onClick={() => handleDeleteWorkflow(wf.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-500/10 transition"
+                                title="Delete chained workflow"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Progress Bar */}
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                              <span>Pipeline Progression</span>
+                              <span>{progressPercent}% completed</span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-500"
+                                style={{ width: `${progressPercent}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Sequential Step Pills */}
+                          <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80">
+                            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                              Sequential Step Flow:
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {steps.map((step, idx) => {
+                                const stepDone = idx < currentIndex;
+                                const stepActive = idx === currentIndex && !isComplete;
+
+                                return (
+                                  <React.Fragment key={step.id || idx}>
+                                    <div
+                                      className={`px-3 py-1.5 rounded-xl border text-xs flex items-center gap-2 transition ${
+                                        stepDone
+                                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 line-through'
+                                          : stepActive
+                                          ? 'bg-purple-500/15 border-purple-500 text-purple-800 dark:text-purple-200 font-semibold shadow-sm ring-2 ring-purple-500/20'
+                                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${
+                                          stepDone
+                                            ? 'bg-emerald-500 text-white'
+                                            : stepActive
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                        }`}
+                                      >
+                                        {stepDone ? '✓' : idx + 1}
+                                      </span>
+                                      <span>{step.title}</span>
+                                      {stepActive && (
+                                        <span className="text-[10px] uppercase font-bold text-purple-600 dark:text-purple-400 tracking-wider">
+                                          (Active in Todoist)
+                                        </span>
+                                      )}
+                                    </div>
+                                    {idx < steps.length - 1 && (
+                                      <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                              {isLooped && (
+                                <>
+                                  <ArrowRight className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                  <span className="text-xs text-purple-600 dark:text-purple-400 font-semibold px-2 py-0.5 rounded-md bg-purple-500/10">
+                                    ↻ Restarts at Step 1
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
 
             {/* Workflow List */}
             <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4 transition-colors">
               <h3 className="font-semibold text-sm text-slate-900 dark:text-white">Configured Automation Rules</h3>
               
+              {/* Repeated Tasks Rule */}
               <div className="p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-indigo-500/30 space-y-3 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1918,6 +2494,39 @@ export default function Dashboard() {
                     <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                       <div className="font-semibold text-indigo-600 dark:text-indigo-400">+ x Days at HH:MM</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Recreates on completed date + x days at target time (e.g. +4 days at 5 PM)</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chained Tasks Rule */}
+              <div className="p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-purple-500/30 space-y-3 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900 dark:text-white text-sm">Chained Tasks</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 font-medium">Active</span>
+                  </div>
+                  <div className="text-xs text-slate-400 dark:text-slate-500 font-mono">ID: chained_tasks</div>
+                </div>
+                
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  When <code className="text-purple-600 dark:text-purple-400 font-mono">item:completed</code> occurs for an active step in a chain, the engine marks the step complete and automatically opens the subsequent step in Todoist. If looping is enabled, completing the final task restarts the chain from Step 1.
+                </p>
+
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80">
+                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Key Pipeline Features:</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="font-semibold text-purple-600 dark:text-purple-400">Ordered Steps</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Linear task sequence execution without manual triggering</div>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="font-semibold text-purple-600 dark:text-purple-400">Seamless Todoist Sync</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Only one task is active in Todoist at any given time</div>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="font-semibold text-purple-600 dark:text-purple-400">Optional Looping</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Automatically cycles back to step 1 for repeatable workflows</div>
                     </div>
                   </div>
                 </div>
@@ -2020,11 +2629,17 @@ export default function Dashboard() {
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white transition-colors"
                   >
                     <option value="">-- Choose a tracked task --</option>
-                    {tasks.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.title} (Streak: {t.streak_count}, Delay: {getDelayLabel(t)}) {t.todoist_id ? `[Todoist: ${t.todoist_id}]` : ''}
-                      </option>
-                    ))}
+                    {tasks.map((t) => {
+                      const isChained = t.workflow_type === 'chained_tasks';
+                      const badgeLabel = isChained
+                        ? `[Chained: Step ${(t.workflow_config?.step_index ?? 0) + 1}/${t.workflow_config?.total_steps || t.workflow_config?.steps?.length || '?'}]`
+                        : `[Delay: ${getDelayLabel(t)}]`;
+                      return (
+                        <option key={t.id} value={t.id}>
+                          {t.title} {badgeLabel} (Streak: {t.streak_count}) {t.todoist_id ? `• Todoist: ${t.todoist_id}` : '• Local Only'}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -2393,7 +3008,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     todoist_project_id TEXT,
     priority INTEGER DEFAULT 1,
     streak_count INTEGER NOT NULL DEFAULT 0,
-    workflow_type TEXT NOT NULL DEFAULT 'repeated_tasks',
+    workflow_type TEXT NOT NULL DEFAULT 'repeated_tasks' CHECK (workflow_type IN ('repeated_tasks', 'chained_tasks', 'immediate_recreate', 'interval_recreate', 'streak_only', 'none')),
     workflow_config JSONB DEFAULT '{}'::jsonb,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     last_completed_at TIMESTAMPTZ,
@@ -2456,9 +3071,10 @@ CREATE POLICY "Full access webhook_logs" ON public.webhook_logs FOR ALL USING (t
 CREATE POLICY "Full access workflow_runs" ON public.workflow_runs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Full access app_settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
 
--- Migration for Repeated tasks workflow:
+-- Migrations for Repeated & Chained tasks workflows:
 -- ALTER TABLE public.tasks ALTER COLUMN workflow_type SET DEFAULT 'repeated_tasks';
--- UPDATE public.tasks SET workflow_type = 'repeated_tasks' WHERE workflow_type = 'immediate_recreate';`);
+-- ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_workflow_type_check;
+-- ALTER TABLE public.tasks ADD CONSTRAINT tasks_workflow_type_check CHECK (workflow_type IN ('repeated_tasks', 'chained_tasks', 'immediate_recreate', 'interval_recreate', 'streak_only', 'none'));`);
                     setCopySuccess(true);
                     setTimeout(() => setCopySuccess(false), 2000);
                   }}

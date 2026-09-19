@@ -1,6 +1,6 @@
 export type TaskStatus = 'pending' | 'completed' | 'archived';
 
-export type WorkflowType = 'repeated_tasks' | 'immediate_recreate' | 'interval_recreate' | 'streak_only' | 'none';
+export type WorkflowType = 'repeated_tasks' | 'chained_tasks' | 'immediate_recreate' | 'interval_recreate' | 'streak_only' | 'none';
 
 export type DelayMode = 'immediately' | 'after_hours' | 'tomorrow_at' | 'after_days_at' | 'exact_datetime';
 
@@ -12,10 +12,35 @@ export interface WorkflowDelayConfig {
   datetime?: string; // Legacy / exact datetime if used
 }
 
+export interface ChainStep {
+  id: string;
+  title: string;
+  description?: string;
+  priority?: number;
+  delay?: WorkflowDelayConfig;
+}
+
+export interface ChainedWorkflowConfig {
+  chain_id?: string;
+  chain_name: string;
+  steps: ChainStep[];
+  current_step_index: number;
+  loop?: boolean;
+  status?: 'active' | 'completed';
+  active_task_id?: string;
+}
+
 export interface TaskWorkflowConfig {
   delay?: WorkflowDelayConfig;
   scheduled_recreate_at?: string | null;
   auto_sync?: boolean;
+  // Chained tasks parameters:
+  chain_id?: string;
+  chain_name?: string;
+  step_index?: number;
+  total_steps?: number;
+  steps?: ChainStep[];
+  loop?: boolean;
   [key: string]: any;
 }
 

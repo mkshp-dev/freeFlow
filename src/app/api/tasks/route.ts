@@ -78,6 +78,39 @@ export async function POST(req: NextRequest) {
       todoistWarning = 'Todoist API token is not yet configured. Task created locally only.';
     }
 
+    let finalWorkflowConfig = { auto_sync: true, ...workflow_config };
+
+    if (workflow_type === 'chained_tasks' && Array.isArray(workflow_config.steps) && workflow_config.steps.length > 0) {
+      if (!workflow_config.chain_id) {
+        const chainName = workflow_config.chain_name || title.trim();
+        const { data: wf } = await supabaseAdmin
+          .from('workflows')
+          .insert({
+            name: chainName,
+            description: `Chained tasks workflow (${workflow_config.steps.length} steps): ${workflow_config.steps.map((s: any) => s.title).join(' → ')}`,
+            trigger_event: 'item:completed',
+            action_type: 'chained_tasks',
+            is_active: true,
+            config: {
+              chain_name: chainName,
+              steps: workflow_config.steps,
+              current_step_index: 0,
+              loop: Boolean(workflow_config.loop),
+              status: 'active',
+            },
+          })
+          .select()
+          .single();
+
+        if (wf) {
+          finalWorkflowConfig.chain_id = wf.id;
+          finalWorkflowConfig.chain_name = chainName;
+          finalWorkflowConfig.step_index = 0;
+          finalWorkflowConfig.total_steps = workflow_config.steps.length;
+        }
+      }
+    }
+
     // Insert task into Supabase
     const { data, error } = await supabaseAdmin
       .from('tasks')
@@ -89,7 +122,7 @@ export async function POST(req: NextRequest) {
         priority: Number(priority) || 1,
         streak_count: 0,
         workflow_type,
-        workflow_config: { auto_sync: true, ...workflow_config },
+        workflow_config: finalWorkflowConfig,
         user_id: user_id || null,
       })
       .select()

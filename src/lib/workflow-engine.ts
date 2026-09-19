@@ -1,6 +1,6 @@
 import { supabaseAdmin } from './supabase';
 import { createTodoistTask } from './todoist';
-import { TodoistWebhookEvent, Task, WorkflowDelayConfig } from '@/types';
+import { TodoistWebhookEvent, Task, WorkflowDelayConfig, ChainStep } from '@/types';
 
 export interface WorkflowResult {
   success: boolean;
@@ -202,10 +202,253 @@ export async function processTodoistWebhookEvent(
     if (eventName === 'item:completed') {
       if (targetTask) {
         const workflowType = targetTask.workflow_type || 'repeated_tasks';
-        const isRepeatedTask =
-          workflowType === 'repeated_tasks' || workflowType === 'immediate_recreate';
+        const isRepeatedTask = workflowType === 'repeated_tasks' || workflowType === 'immediate_recreate';
 
-        if (isRepeatedTask) {
+        if (workflowType === 'chained_tasks') {
+          // CHAINED TASKS WORKFLOW:
+          // User completed a step in an ordered chain of tasks.
+          // Automatically progress to the next step and spawn it in Todoist.
+          const now = new Date().toISOString();
+          newStreak = (targetTask.streak_count || 0) + 1;
+          const chainConfig = targetTask.workflow_config || {};
+          const steps: ChainStep[] = chainConfig.steps || [];
+          const currentStepIndex = Number(chainConfig.step_index) || 0;
+          const chainName = chainConfig.chain_name || targetTask.title;
+          const loop = Boolean(chainConfig.loop);
+          const nextStepIndex = currentStepIndex + 1;
+
+          if (steps.length === 0) {
+            // Edge case: no steps array found, simply mark completed
+            await supabaseAdmin
+              .from('tasks')
+              .update({
+                status: 'completed',
+                last_completed_at: now,
+                streak_count: newStreak,
+                updated_at: now,
+              })
+              .eq('id', targetTask.id);
+
+            actionTaken = `Chained task "${targetTask.title}" completed.`;
+          } else if (nextStepIndex < steps.length) {
+            // Advance to the NEXT step in the chain
+            const nextStep = steps[nextStepIndex];
+            const nextDelay = nextStep.delay;
+            const scheduledTime = calculateScheduledRecreationTime(nextDelay);
+
+            if (scheduledTime && scheduledTime.getTime() > Date.now()) {
+              // Delayed step opening
+              scheduledRecreateAt = scheduledTime.toISOString();
+              actionTaken = `Step ${currentStepIndex + 1}/${steps.length} ("${targetTask.title}") completed! Next step "${nextStep.title}" scheduled to open in Todoist at ${scheduledTime.toLocaleString()}.`;
+
+              await supabaseAdmin
+                .from('tasks')
+                .update({
+                  title: nextStep.title,
+                  description: nextStep.description || null,
+                  priority: nextStep.priority || 1,
+                  todoist_id: null,
+                  status: 'pending',
+                  last_completed_at: now,
+                  streak_count: newStreak,
+                  updated_at: now,
+                  workflow_config: {
+                    ...chainConfig,
+                    step_index: nextStepIndex,
+                    scheduled_recreate_at: scheduledRecreateAt,
+                  },
+                })
+                .eq('id', targetTask.id);
+
+              await supabaseAdmin.from('workflow_runs').insert({
+                workflow_id: chainConfig.chain_id || null,
+                task_id: targetTask.id,
+                trigger_event: eventName,
+                status: 'success',
+                details: {
+                  workflow_type: 'chained_tasks',
+                  chain_name: chainName,
+                  completed_step_index: currentStepIndex,
+                  completed_step_title: targetTask.title,
+                  next_step_index: nextStepIndex,
+                  next_step_title: nextStep.title,
+                  scheduled_recreate_at: scheduledRecreateAt,
+                  completed_at: now,
+                },
+              });
+            } else {
+              // Immediate step opening in Todoist
+              let createdNext = null;
+              try {
+                createdNext = await createTodoistTask({
+                  content: nextStep.title,
+                  description: nextStep.description || undefined,
+                  priority: nextStep.priority || 1,
+                  project_id: targetTask.todoist_project_id || undefined,
+                  labels: ['freeflow-habit', 'chained-task'],
+                });
+                newTodoistId = String(createdNext.id);
+              } catch (err: any) {
+                console.error('[WorkflowEngine] Failed to create next chained step in Todoist:', err);
+              }
+
+              const nextConfig = {
+                ...chainConfig,
+                step_index: nextStepIndex,
+              };
+              delete nextConfig.scheduled_recreate_at;
+
+              await supabaseAdmin
+                .from('tasks')
+                .update({
+                  title: nextStep.title,
+                  description: nextStep.description || null,
+                  priority: nextStep.priority || 1,
+                  todoist_id: newTodoistId || null,
+                  status: 'pending',
+                  last_completed_at: now,
+                  streak_count: newStreak,
+                  updated_at: now,
+                  workflow_config: nextConfig,
+                })
+                .eq('id', targetTask.id);
+
+              actionTaken = `Step ${currentStepIndex + 1}/${steps.length} ("${targetTask.title}") completed! Automatically created next step ${nextStepIndex + 1}/${steps.length}: "${nextStep.title}" in Todoist${newTodoistId ? ` (ID: ${newTodoistId})` : ''}.`;
+
+              await supabaseAdmin.from('workflow_runs').insert({
+                workflow_id: chainConfig.chain_id || null,
+                task_id: targetTask.id,
+                trigger_event: eventName,
+                status: newTodoistId ? 'success' : 'failed',
+                details: {
+                  workflow_type: 'chained_tasks',
+                  chain_name: chainName,
+                  completed_step_index: currentStepIndex,
+                  completed_step_title: targetTask.title,
+                  next_step_index: nextStepIndex,
+                  next_step_title: nextStep.title,
+                  new_todoist_id: newTodoistId,
+                  completed_at: now,
+                },
+              });
+            }
+
+            if (chainConfig.chain_id) {
+              await supabaseAdmin
+                .from('workflows')
+                .update({
+                  config: {
+                    ...(chainConfig || {}),
+                    current_step_index: nextStepIndex,
+                  },
+                  updated_at: now,
+                })
+                .eq('id', chainConfig.chain_id);
+            }
+          } else {
+            // Final step in the chain completed!
+            if (loop) {
+              // Loop back to Step 0
+              const firstStep = steps[0];
+              let createdFirst = null;
+              try {
+                createdFirst = await createTodoistTask({
+                  content: firstStep.title,
+                  description: firstStep.description || undefined,
+                  priority: firstStep.priority || 1,
+                  project_id: targetTask.todoist_project_id || undefined,
+                  labels: ['freeflow-habit', 'chained-task'],
+                });
+                newTodoistId = String(createdFirst.id);
+              } catch (err: any) {
+                console.error('[WorkflowEngine] Failed to loop chained task in Todoist:', err);
+              }
+
+              const nextConfig = {
+                ...chainConfig,
+                step_index: 0,
+              };
+              delete nextConfig.scheduled_recreate_at;
+
+              await supabaseAdmin
+                .from('tasks')
+                .update({
+                  title: firstStep.title,
+                  description: firstStep.description || null,
+                  priority: firstStep.priority || 1,
+                  todoist_id: newTodoistId || null,
+                  status: 'pending',
+                  last_completed_at: now,
+                  streak_count: newStreak,
+                  updated_at: now,
+                  workflow_config: nextConfig,
+                })
+                .eq('id', targetTask.id);
+
+              actionTaken = `Final step ${steps.length}/${steps.length} completed for chain "${chainName}"! Loop is active; restarted at Step 1: "${firstStep.title}" in Todoist.`;
+
+              await supabaseAdmin.from('workflow_runs').insert({
+                workflow_id: chainConfig.chain_id || null,
+                task_id: targetTask.id,
+                trigger_event: eventName,
+                status: 'success',
+                details: {
+                  workflow_type: 'chained_tasks',
+                  chain_name: chainName,
+                  action: 'chain_looped',
+                  restarted_step: firstStep.title,
+                  completed_at: now,
+                },
+              });
+            } else {
+              // Chain finished completely
+              await supabaseAdmin
+                .from('tasks')
+                .update({
+                  status: 'completed',
+                  last_completed_at: now,
+                  streak_count: newStreak,
+                  updated_at: now,
+                  workflow_config: {
+                    ...chainConfig,
+                    step_index: steps.length,
+                    status: 'completed',
+                  },
+                })
+                .eq('id', targetTask.id);
+
+              actionTaken = `Completed all ${steps.length} steps in chain "${chainName}"! Chain workflow complete.`;
+
+              await supabaseAdmin.from('workflow_runs').insert({
+                workflow_id: chainConfig.chain_id || null,
+                task_id: targetTask.id,
+                trigger_event: eventName,
+                status: 'success',
+                details: {
+                  workflow_type: 'chained_tasks',
+                  chain_name: chainName,
+                  action: 'chain_completed',
+                  total_steps: steps.length,
+                  completed_at: now,
+                },
+              });
+
+              if (chainConfig.chain_id) {
+                await supabaseAdmin
+                  .from('workflows')
+                  .update({
+                    config: {
+                      ...(chainConfig || {}),
+                      current_step_index: steps.length,
+                      status: 'completed',
+                    },
+                    updated_at: now,
+                  })
+                  .eq('id', chainConfig.chain_id);
+              }
+            }
+          }
+        } else if (isRepeatedTask) {
           // Increment streak
           newStreak = (targetTask.streak_count || 0) + 1;
           const now = new Date().toISOString();
