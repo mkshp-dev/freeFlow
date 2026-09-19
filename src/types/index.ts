@@ -1,6 +1,22 @@
 export type TaskStatus = 'pending' | 'completed' | 'archived';
 
-export type WorkflowType = 'immediate_recreate' | 'interval_recreate' | 'streak_only' | 'none';
+export type WorkflowType = 'repeated_tasks' | 'immediate_recreate' | 'interval_recreate' | 'streak_only' | 'none';
+
+export type DelayMode = 'immediately' | 'after_hours' | 'tomorrow_at' | 'exact_datetime';
+
+export interface WorkflowDelayConfig {
+  mode: DelayMode;
+  hours?: number; // Fractional hours, e.g. 0.5, 1.5, 2.5, 8
+  time?: string; // HH:MM, e.g. '09:00'
+  datetime?: string; // YYYY:MM:DD HH:MM or YYYY-MM-DD HH:MM
+}
+
+export interface TaskWorkflowConfig {
+  delay?: WorkflowDelayConfig;
+  scheduled_recreate_at?: string | null;
+  auto_sync?: boolean;
+  [key: string]: any;
+}
 
 export interface Task {
   id: string;
@@ -12,7 +28,7 @@ export interface Task {
   priority: number;
   streak_count: number;
   workflow_type: WorkflowType;
-  workflow_config?: Record<string, any>;
+  workflow_config?: TaskWorkflowConfig;
   user_id?: string | null;
   last_completed_at?: string | null;
   created_at: string;

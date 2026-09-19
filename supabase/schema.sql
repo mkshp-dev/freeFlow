@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     todoist_project_id TEXT,
     priority INTEGER DEFAULT 1,
     streak_count INTEGER NOT NULL DEFAULT 0,
-    workflow_type TEXT NOT NULL DEFAULT 'immediate_recreate' CHECK (workflow_type IN ('immediate_recreate', 'interval_recreate', 'streak_only', 'none')),
-    workflow_config JSONB DEFAULT '{}'::jsonb,
+    workflow_type TEXT NOT NULL DEFAULT 'repeated_tasks' CHECK (workflow_type IN ('repeated_tasks', 'immediate_recreate', 'interval_recreate', 'streak_only', 'none')),
+    workflow_config JSONB DEFAULT '{"delay": {"mode": "immediately"}}'::jsonb,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     last_completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
@@ -36,20 +36,20 @@ CREATE TABLE IF NOT EXISTS public.workflows (
     trigger_event TEXT NOT NULL DEFAULT 'item:completed',
     action_type TEXT NOT NULL DEFAULT 'recreate_task',
     is_active BOOLEAN NOT NULL DEFAULT true,
-    config JSONB DEFAULT '{ "recreate_delay_seconds": 0, "increment_streak": true }'::jsonb,
+    config JSONB DEFAULT '{ "delay": { "mode": "immediately" }, "recreate_delay_seconds": 0, "increment_streak": true }'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Insert Default "Immediate Recreation" Workflow
+-- Insert Default "Repeated tasks" Workflow
 INSERT INTO public.workflows (name, description, trigger_event, action_type, is_active, config)
 VALUES (
-    'Immediate Task Recreation',
-    'When a task is completed in Todoist, immediately recreate it in Todoist and increment the habit streak.',
+    'Repeated tasks',
+    'When a task is completed in Todoist, recreate it in Todoist after the specified delay and increment the habit streak.',
     'item:completed',
     'recreate_task',
     true,
-    '{"recreate_delay_seconds": 0, "increment_streak": true, "prefix": ""}'::jsonb
+    '{"delay": {"mode": "immediately"}, "recreate_delay_seconds": 0, "increment_streak": true, "prefix": ""}'::jsonb
 )
 ON CONFLICT DO NOTHING;
 
@@ -113,3 +113,7 @@ CREATE POLICY "Allow full access for authenticated and anon users on app_setting
 -- Migration helper for existing installations:
 -- ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 -- CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id);
+-- ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_workflow_type_check;
+-- ALTER TABLE public.tasks ADD CONSTRAINT tasks_workflow_type_check CHECK (workflow_type IN ('repeated_tasks', 'immediate_recreate', 'interval_recreate', 'streak_only', 'none'));
+-- UPDATE public.tasks SET workflow_type = 'repeated_tasks' WHERE workflow_type = 'immediate_recreate';
+-- UPDATE public.workflows SET name = 'Repeated tasks', description = 'When a task is completed in Todoist, recreate it in Todoist after the specified delay and increment the habit streak.', config = jsonb_set(config, '{delay}', '{"mode": "immediately"}', true) WHERE name = 'Immediate Task Recreation';

@@ -40,8 +40,9 @@ import {
   LogIn,
   LogOut,
   KeyRound,
+  Calendar,
 } from 'lucide-react';
-import { Task, Workflow, WebhookLog } from '@/types';
+import { Task, Workflow, WebhookLog, DelayMode, WorkflowDelayConfig } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import AuthModal, { AuthMode } from '@/components/AuthModal';
 
@@ -97,8 +98,13 @@ export default function Dashboard() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState('1');
-  const [newTaskWorkflow, setNewTaskWorkflow] = useState('immediate_recreate');
+  const [newTaskWorkflow, setNewTaskWorkflow] = useState('repeated_tasks');
+  const [newDelayMode, setNewDelayMode] = useState<DelayMode>('immediately');
+  const [newDelayHours, setNewDelayHours] = useState('1.5');
+  const [newDelayTime, setNewDelayTime] = useState('09:00');
+  const [newDelayDateTime, setNewDelayDateTime] = useState('');
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [recreatingTaskId, setRecreatingTaskId] = useState<string | null>(null);
 
   // Simulator state
   const [simTask, setSimTask] = useState<string>('');
@@ -247,6 +253,49 @@ export default function Dashboard() {
     } catch (_) {}
   };
 
+  // Helper to format Delay configuration for display
+  const getDelayLabel = (task: Task) => {
+    const delay = task.workflow_config?.delay;
+    if (!delay || delay.mode === 'immediately') {
+      return 'Immediately';
+    }
+    if (delay.mode === 'after_hours') {
+      return `After ${delay.hours ?? 1}h`;
+    }
+    if (delay.mode === 'tomorrow_at') {
+      return `Tomorrow at ${delay.time || '09:00'}`;
+    }
+    if (delay.mode === 'exact_datetime') {
+      return `At ${delay.datetime}`;
+    }
+    return 'Immediately';
+  };
+
+  // Force immediate recreation of a delayed task
+  const handleRecreateNow = async (task: Task) => {
+    setRecreatingTaskId(task.id);
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: task.id,
+          action: 'recreate_now',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        loadData();
+      } else {
+        alert(data.error || 'Failed to recreate task now');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setRecreatingTaskId(null);
+    }
+  };
+
   // Handle task creation
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,6 +303,18 @@ export default function Dashboard() {
 
     setIsCreatingTask(true);
     try {
+      let delayConfig: WorkflowDelayConfig | undefined;
+      if (newTaskWorkflow === 'repeated_tasks' || newTaskWorkflow === 'immediate_recreate') {
+        delayConfig = { mode: newDelayMode };
+        if (newDelayMode === 'after_hours') {
+          delayConfig.hours = parseFloat(newDelayHours) || 1;
+        } else if (newDelayMode === 'tomorrow_at') {
+          delayConfig.time = newDelayTime || '09:00';
+        } else if (newDelayMode === 'exact_datetime') {
+          delayConfig.datetime = newDelayDateTime.trim();
+        }
+      }
+
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -262,6 +323,9 @@ export default function Dashboard() {
           description: newTaskDesc,
           priority: parseInt(newTaskPriority, 10),
           workflow_type: newTaskWorkflow,
+          workflow_config: {
+            delay: delayConfig,
+          },
           sync_with_todoist: true,
           user_id: user?.id || null,
         }),
@@ -271,6 +335,10 @@ export default function Dashboard() {
       if (res.ok) {
         setNewTaskTitle('');
         setNewTaskDesc('');
+        setNewDelayMode('immediately');
+        setNewDelayHours('1.5');
+        setNewDelayTime('09:00');
+        setNewDelayDateTime('');
         loadData();
       } else {
         alert(data.error || 'Failed to create task');
@@ -468,7 +536,7 @@ export default function Dashboard() {
   const avgStreak = tasks.length > 0 ? Math.round(stats.totalCompletions / tasks.length) : 0;
   const successCount = webhookLogs.filter((l) => l.processed_status === 'success').length;
   const successRate = webhookLogs.length > 0 ? Math.round((successCount / webhookLogs.length) * 100) : 100;
-  const autoRecreateCount = tasks.filter((t) => t.workflow_type === 'immediate_recreate').length;
+  const autoRecreateCount = tasks.filter((t) => t.workflow_type === 'repeated_tasks' || t.workflow_type === 'immediate_recreate').length;
   const recentLogs = webhookLogs.slice(0, 5);
 
   const navItems = [
@@ -1081,7 +1149,7 @@ export default function Dashboard() {
                   </div>
                   <div className="mt-3 flex items-baseline gap-2">
                     <span className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{tasks.length}</span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">{autoRecreateCount} auto-recreating</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">{autoRecreateCount} repeated tasks</span>
                   </div>
                   <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
                     <span>Todoist synced</span>
@@ -1203,9 +1271,10 @@ export default function Dashboard() {
                                     <span className="font-semibold text-sm text-slate-900 dark:text-white truncate">
                                       {task.title}
                                     </span>
-                                    {task.workflow_type === 'immediate_recreate' && (
-                                      <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                                        Auto-loop
+                                    {(task.workflow_type === 'repeated_tasks' || task.workflow_type === 'immediate_recreate') && (
+                                      <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                        <span>Repeated</span>
+                                        <span className="text-slate-400 dark:text-slate-500 font-normal">• {getDelayLabel(task)}</span>
                                       </span>
                                     )}
                                   </div>
@@ -1229,14 +1298,26 @@ export default function Dashboard() {
                                   {task.streak_count} streak
                                 </span>
 
-                                <button
-                                  onClick={() => handleTriggerComplete(task)}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1 transition"
-                                  title="Check off & recreate immediately"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  Recreate
-                                </button>
+                                {task.workflow_config?.scheduled_recreate_at ? (
+                                  <button
+                                    onClick={() => handleRecreateNow(task)}
+                                    disabled={recreatingTaskId === task.id}
+                                    className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/20 text-xs font-semibold flex items-center gap-1 transition"
+                                    title={`Scheduled to recreate: ${new Date(task.workflow_config.scheduled_recreate_at).toLocaleString()}`}
+                                  >
+                                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                                    <span>{recreatingTaskId === task.id ? 'Recreating...' : 'Recreate Now'}</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleTriggerComplete(task)}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1 transition"
+                                    title="Check off & trigger workflow"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    Check Off
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
@@ -1333,12 +1414,71 @@ export default function Dashboard() {
                         <select
                           value={newTaskWorkflow}
                           onChange={(e) => setNewTaskWorkflow(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-medium"
                         >
-                          <option value="immediate_recreate">Recreate Immediately</option>
-                          <option value="streak_only">Streak Only</option>
+                          <option value="repeated_tasks">Workflow: Repeated tasks</option>
+                          <option value="streak_only">Workflow: Streak Only</option>
+                          <option value="none">Standard Task (No workflow)</option>
                         </select>
                       </div>
+
+                      {(newTaskWorkflow === 'repeated_tasks' || newTaskWorkflow === 'immediate_recreate') && (
+                        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800/80 space-y-2">
+                          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                            Delay Before Recreating:
+                          </label>
+                          <select
+                            value={newDelayMode}
+                            onChange={(e) => setNewDelayMode(e.target.value as DelayMode)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white"
+                          >
+                            <option value="immediately">Immediately (0 delay)</option>
+                            <option value="after_hours">After x hours</option>
+                            <option value="tomorrow_at">Tomorrow at HH:MM</option>
+                            <option value="exact_datetime">Exact Date & Time (YYYY:MM:DD HH:MM)</option>
+                          </select>
+
+                          {newDelayMode === 'after_hours' && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0.1"
+                                value={newDelayHours}
+                                onChange={(e) => setNewDelayHours(e.target.value)}
+                                placeholder="1.5"
+                                className="w-20 px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                              />
+                              <span className="text-[11px] text-slate-500">hours (e.g. 0.5, 1.5, 4)</span>
+                            </div>
+                          )}
+
+                          {newDelayMode === 'tomorrow_at' && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="time"
+                                value={newDelayTime}
+                                onChange={(e) => setNewDelayTime(e.target.value)}
+                                className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                              />
+                              <span className="text-[11px] text-slate-500">Tomorrow at this time</span>
+                            </div>
+                          )}
+
+                          {newDelayMode === 'exact_datetime' && (
+                            <div>
+                              <input
+                                type="text"
+                                value={newDelayDateTime}
+                                onChange={(e) => setNewDelayDateTime(e.target.value)}
+                                placeholder="2026:09:20 09:00"
+                                className="w-full px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 placeholder:text-slate-400"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <button
                         type="submit"
                         disabled={isCreatingTask || !newTaskTitle.trim()}
@@ -1429,35 +1569,114 @@ export default function Dashboard() {
                 Tasks created here will automatically synchronize with Todoist and attach your chosen workflow.
               </p>
 
-              <form onSubmit={handleCreateTask} className="mt-4 grid grid-cols-1 sm:grid-cols-12 gap-3">
-                <div className="sm:col-span-5">
-                  <input
-                    type="text"
-                    value={newTaskTitle}
-                    onChange={(e) => setNewTaskTitle(e.target.value)}
-                    placeholder='e.g. "Swimming", "Read 30 mins", "Daily Meditation"'
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
-                    required
-                  />
+              <form onSubmit={handleCreateTask} className="mt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                  <div className="sm:col-span-6">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Habit / Task Title
+                    </label>
+                    <input
+                      type="text"
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      placeholder='e.g. "Swimming", "Read 30 mins", "Daily Meditation"'
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
+                      required
+                    />
+                  </div>
+
+                  <div className="sm:col-span-6">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Workflow Mode
+                    </label>
+                    <select
+                      value={newTaskWorkflow}
+                      onChange={(e) => setNewTaskWorkflow(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white transition-colors"
+                    >
+                      <option value="repeated_tasks">Workflow: Repeated tasks</option>
+                      <option value="streak_only">Workflow: Streak Tracking Only</option>
+                      <option value="none">Standard Task (No workflow)</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="sm:col-span-4">
-                  <select
-                    value={newTaskWorkflow}
-                    onChange={(e) => setNewTaskWorkflow(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white transition-colors"
-                  >
-                    <option value="immediate_recreate">Workflow: Recreate Immediately on Complete</option>
-                    <option value="streak_only">Workflow: Streak Tracking Only</option>
-                    <option value="none">Standard Task (No workflow)</option>
-                  </select>
-                </div>
+                {(newTaskWorkflow === 'repeated_tasks' || newTaskWorkflow === 'immediate_recreate') && (
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <Clock className="w-4 h-4 text-indigo-500" />
+                      Delay Parameter (Recreation schedule once completed):
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <select
+                          value={newDelayMode}
+                          onChange={(e) => setNewDelayMode(e.target.value as DelayMode)}
+                          className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white"
+                        >
+                          <option value="immediately">Immediately (0 delay)</option>
+                          <option value="after_hours">After x hours</option>
+                          <option value="tomorrow_at">Tomorrow at HH:MM</option>
+                          <option value="exact_datetime">Exact Date & Time (YYYY:MM:DD HH:MM)</option>
+                        </select>
+                      </div>
 
-                <div className="sm:col-span-3">
+                      <div>
+                        {newDelayMode === 'immediately' && (
+                          <div className="text-xs text-slate-500 dark:text-slate-400 py-2">
+                            Immediately respawns the task in Todoist upon check-off.
+                          </div>
+                        )}
+
+                        {newDelayMode === 'after_hours' && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0.1"
+                              value={newDelayHours}
+                              onChange={(e) => setNewDelayHours(e.target.value)}
+                              placeholder="1.5"
+                              className="w-24 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                            />
+                            <span className="text-xs text-slate-500 dark:text-slate-400">hours (e.g. 0.5, 1.5, 4)</span>
+                          </div>
+                        )}
+
+                        {newDelayMode === 'tomorrow_at' && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="time"
+                              value={newDelayTime}
+                              onChange={(e) => setNewDelayTime(e.target.value)}
+                              className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                            />
+                            <span className="text-xs text-slate-500 dark:text-slate-400">Tomorrow at this time</span>
+                          </div>
+                        )}
+
+                        {newDelayMode === 'exact_datetime' && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={newDelayDateTime}
+                              onChange={(e) => setNewDelayDateTime(e.target.value)}
+                              placeholder="2026:09:20 09:00"
+                              className="w-full max-w-xs px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 placeholder:text-slate-400"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
                   <button
                     type="submit"
-                    disabled={isCreatingTask}
-                    className="w-full py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-semibold text-white transition flex items-center justify-center gap-2 shadow-sm"
+                    disabled={isCreatingTask || !newTaskTitle.trim()}
+                    className="py-2.5 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-semibold text-white transition flex items-center justify-center gap-2 shadow-sm"
                   >
                     {isCreatingTask ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                     Create & Push to Todoist
@@ -1489,7 +1708,7 @@ export default function Dashboard() {
                   {tasks.map((task) => (
                     <div key={task.id} className="p-4 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-900/30 transition">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 flex-wrap">
                           <span className="font-semibold text-slate-900 dark:text-white text-base">{task.title}</span>
                           
                           {/* Streak Badge */}
@@ -1499,10 +1718,24 @@ export default function Dashboard() {
                           </span>
 
                           {/* Workflow Badge */}
-                          {task.workflow_type === 'immediate_recreate' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                          {(task.workflow_type === 'repeated_tasks' || task.workflow_type === 'immediate_recreate') && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
                               <RefreshCw className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                              Immediate Recreate
+                              <span>Repeated tasks</span>
+                              <span className="text-slate-400 dark:text-slate-500 font-normal">• Delay: {getDelayLabel(task)}</span>
+                            </span>
+                          )}
+                          {task.workflow_type === 'streak_only' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20">
+                              Streak Only
+                            </span>
+                          )}
+
+                          {/* Scheduled recreation indicator if pending */}
+                          {task.workflow_config?.scheduled_recreate_at && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                              <Clock className="w-3 h-3 text-amber-500" />
+                              Due: {new Date(task.workflow_config.scheduled_recreate_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                         </div>
@@ -1511,7 +1744,9 @@ export default function Dashboard() {
                           {task.todoist_id ? (
                             <span className="font-mono text-slate-500 dark:text-slate-400">Todoist ID: {task.todoist_id}</span>
                           ) : (
-                            <span className="text-amber-600 dark:text-amber-400 font-medium">Local Only (No Todoist ID)</span>
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">
+                              {task.workflow_config?.scheduled_recreate_at ? 'Waiting for scheduled recreation' : 'Local Only (No Todoist ID)'}
+                            </span>
                           )}
                           {task.last_completed_at && (
                             <span>Last completed: {new Date(task.last_completed_at).toLocaleTimeString()}</span>
@@ -1520,14 +1755,26 @@ export default function Dashboard() {
                       </div>
 
                       <div className="flex items-center gap-2 self-end sm:self-center">
-                        <button
-                          onClick={() => handleTriggerComplete(task)}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 transition"
-                          title="Complete in Todoist & Trigger Workflow"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          Complete & Recreate
-                        </button>
+                        {task.workflow_config?.scheduled_recreate_at ? (
+                          <button
+                            onClick={() => handleRecreateNow(task)}
+                            disabled={recreatingTaskId === task.id}
+                            className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/20 text-xs font-semibold flex items-center gap-1.5 transition"
+                            title="Bypass delay and recreate in Todoist now"
+                          >
+                            <Clock className="w-3.5 h-3.5 text-amber-500" />
+                            {recreatingTaskId === task.id ? 'Recreating...' : 'Recreate Now'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleTriggerComplete(task)}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 transition"
+                            title="Complete in Todoist & Trigger Workflow"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            Check Off
+                          </button>
+                        )}
 
                         <button
                           onClick={() => handleDeleteTask(task.id)}
@@ -1570,18 +1817,18 @@ export default function Dashboard() {
                 {/* Condition */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 transition-colors">
                   <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">2. Rule Evaluation</div>
-                  <div className="font-semibold text-slate-900 dark:text-white">Task Workflow = immediate_recreate</div>
+                  <div className="font-semibold text-slate-900 dark:text-white">Workflow = Repeated tasks</div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Engine matches task in Supabase DB by Todoist ID, verifies workflow settings, and increments habit streak counter.
+                    Engine matches task in Supabase DB by Todoist ID, validates workflow rules, increments streak counter, and calculates recreation schedule.
                   </p>
                 </div>
 
                 {/* Action */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 transition-colors">
                   <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">3. Action Executed</div>
-                  <div className="font-semibold text-emerald-600 dark:text-emerald-400">Recreate Task in Todoist</div>
+                  <div className="font-semibold text-emerald-600 dark:text-emerald-400">Recreate with Configured Delay</div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Calls Todoist REST API to immediately spawn a new instance of the habit task, logs the webhook audit event, and updates dashboard metrics.
+                    If Delay = Immediately, spawns task in Todoist REST API right away. If delayed, schedules recreation and spawns when due.
                   </p>
                 </div>
               </div>
@@ -1591,17 +1838,40 @@ export default function Dashboard() {
             <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4 transition-colors">
               <h3 className="font-semibold text-sm text-slate-900 dark:text-white">Configured Automation Rules</h3>
               
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-indigo-500/30 flex items-center justify-between transition-colors">
-                <div className="space-y-1">
+              <div className="p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-indigo-500/30 space-y-3 transition-colors">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-900 dark:text-white">Immediate Habit Recreation Loop</span>
+                    <span className="font-semibold text-slate-900 dark:text-white text-sm">Repeated tasks</span>
                     <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium">Active</span>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    When <code className="text-indigo-600 dark:text-indigo-300 font-mono">item:completed</code> occurs for any habit marked with <code className="text-indigo-600 dark:text-indigo-300 font-mono">immediate_recreate</code>, recreate in Todoist with delay = 0s and increment habit streak.
-                  </p>
+                  <div className="text-xs text-slate-400 dark:text-slate-500 font-mono">ID: repeated_tasks</div>
                 </div>
-                <div className="text-xs text-slate-400 dark:text-slate-500 font-mono">ID: default-loop</div>
+                
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  When <code className="text-indigo-600 dark:text-indigo-400 font-mono">item:completed</code> occurs for any habit marked with <strong className="text-slate-900 dark:text-white">Repeated tasks</strong>, the engine increments your habit streak and executes or schedules recreation based on your configured <strong className="text-indigo-600 dark:text-indigo-400">Delay</strong> parameter.
+                </p>
+
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80">
+                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Supported Delay Options:</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs">
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="font-semibold text-indigo-600 dark:text-indigo-400">Immediately</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">0 delay; recreated right away on check-off</div>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="font-semibold text-indigo-600 dark:text-indigo-400">After x hours</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Fractional hours supported (e.g. 0.5, 1.5, 4)</div>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="font-semibold text-indigo-600 dark:text-indigo-400">Tomorrow at HH:MM</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Schedules task for tomorrow at chosen time</div>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="font-semibold text-indigo-600 dark:text-indigo-400">YYYY:MM:DD HH:MM</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Exact future date & time recreation target</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1703,7 +1973,7 @@ export default function Dashboard() {
                     <option value="">-- Choose a tracked task --</option>
                     {tasks.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.title} (Streak: {t.streak_count}) {t.todoist_id ? `[Todoist: ${t.todoist_id}]` : ''}
+                        {t.title} (Streak: {t.streak_count}, Delay: {getDelayLabel(t)}) {t.todoist_id ? `[Todoist: ${t.todoist_id}]` : ''}
                       </option>
                     ))}
                   </select>
@@ -2074,7 +2344,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     todoist_project_id TEXT,
     priority INTEGER DEFAULT 1,
     streak_count INTEGER NOT NULL DEFAULT 0,
-    workflow_type TEXT NOT NULL DEFAULT 'immediate_recreate',
+    workflow_type TEXT NOT NULL DEFAULT 'repeated_tasks',
     workflow_config JSONB DEFAULT '{}'::jsonb,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     last_completed_at TIMESTAMPTZ,
@@ -2137,9 +2407,9 @@ CREATE POLICY "Full access webhook_logs" ON public.webhook_logs FOR ALL USING (t
 CREATE POLICY "Full access workflow_runs" ON public.workflow_runs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Full access app_settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
 
--- Migration for existing tasks table:
--- ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
--- CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id);`);
+-- Migration for Repeated tasks workflow:
+-- ALTER TABLE public.tasks ALTER COLUMN workflow_type SET DEFAULT 'repeated_tasks';
+-- UPDATE public.tasks SET workflow_type = 'repeated_tasks' WHERE workflow_type = 'immediate_recreate';`);
                     setCopySuccess(true);
                     setTimeout(() => setCopySuccess(false), 2000);
                   }}
