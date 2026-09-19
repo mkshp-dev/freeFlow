@@ -229,6 +229,36 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
             </div>
           )}
 
+          {/* Quick Dev/Test Account Pill */}
+          {mode === 'login' && (
+            <div className="p-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs transition">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-indigo-500/10 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
+                    Dev Test Account
+                  </p>
+                  <p className="font-mono text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                    dev@freeflow.dev
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('dev@freeflow.dev');
+                  setPassword('freeflow2026');
+                  setErrorMsg(null);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-[11px] transition shrink-0 shadow-xs"
+              >
+                Fill Credentials
+              </button>
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email Field (for login, signup, forgot) */}
