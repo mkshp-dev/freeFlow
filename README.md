@@ -46,6 +46,25 @@ let { graph, effects } = create({
 // effects: [resolved rest, activated swim]
 ```
 
+## In-memory runtime
+
+`src/runtime` is a reference adapter that runs graphs against a manual clock. It turns `When`
+into real times (ISO dates, durations, and rrules in their own time zone via the `rrule`
+package) and fires wake-ups as the clock moves.
+
+```ts
+import { MemoryRuntime } from './src/runtime';
+
+const rt = new MemoryRuntime('2026-10-16T10:00Z');
+rt.create(def);
+rt.send('swim', { kind: 'outcome', node: 'swim', label: 'completed' });
+rt.advance(86_400_000);   // fires the wait; swim is active again
+rt.open();                // every active task, decision and wait, with wake times
+rt.history('swim');       // every event and its effects
+```
+
+The kernel (`src/kernel`) has no dependencies; only the runtime uses `rrule`.
+
 ## Development
 
 ```sh
