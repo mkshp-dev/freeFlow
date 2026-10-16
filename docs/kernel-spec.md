@@ -80,7 +80,10 @@ Graph       = { ..., status: 'running' | 'ended', result?, seq }
 - **Merge:** an arrival at an active node does nothing. A wait already counting down keeps its
   time; an open task carries over.
 - **Self-loops:** a node resolves before its links are followed, so `A → A` runs it again.
-- **Joins** count distinct source nodes. Progress resets when the join fires.
+- **Joins** count distinct source nodes, using each source's latest result: when a source runs
+  again, its earlier arrival is withdrawn until it resolves again. Progress resets when the join
+  fires. This is how a repeat ends cleanly: link the wait's `exhausted` and the repeated task's `*`
+  into one join, so the End waits for the last run instead of aborting it.
 - **End** aborts every other active node, cancels their timers, and sets the graph's `result`.
 - **Running dry:** when no node is active, the graph ends with no `result`. This is allowed;
   `lintGraph` warns when no end node is reachable.

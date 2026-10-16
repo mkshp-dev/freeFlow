@@ -128,21 +128,30 @@ describe('MemoryRuntime', () => {
         start,
         { id: 'monday', kind: 'wait', when: { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=7;BYMINUTE=0;BYSECOND=0;COUNT=3', tz: 'Asia/Kolkata' } },
         { id: 'review', kind: 'task', outcomes: ['completed'] },
+        { id: 'last', kind: 'join', need: 'all' },
+        { id: 'done', kind: 'end', result: 'done' },
       ],
-      links: [link('start', 'monday', 'done'), link('monday', 'monday', 'elapsed'), link('monday', 'review', 'elapsed')],
+      links: [
+        link('start', 'monday', 'done'),
+        link('monday', 'monday', 'elapsed'),
+        link('monday', 'review', 'elapsed'),
+        link('monday', 'last', 'exhausted'),
+        link('review', 'last', '*'),
+        link('last', 'done', 'done'),
+      ],
     });
 
     rt.advanceTo('2026-10-19T02:00Z'); // after the first Monday 07:00 IST
     rt.send('review', { kind: 'outcome', node: 'review', label: 'completed' });
     rt.advanceTo('2026-11-03T00:00Z'); // two more Mondays; the second review is skipped and carries over
     const g = rt.graph('review')!;
+    expect(g.status).toBe('running'); // the last review is still open, so End waits for it
     expect(g.runtime.monday!.state).toEqual({ status: 'resolved', outcome: 'exhausted' });
     expect(g.runtime.review!.runs).toBe(2);
     expect(rt.open().map((i) => i.node)).toEqual(['review']);
 
     rt.send('review', { kind: 'outcome', node: 'review', label: 'completed' });
-    expect(g.status).toBe('running'); // the graph object we read earlier is a snapshot
-    expect(rt.graph('review')!.status).toBe('ended');
+    expect(rt.graph('review')).toMatchObject({ status: 'ended', result: 'done' });
   });
 
   it('logs rejected events without changing anything', () => {

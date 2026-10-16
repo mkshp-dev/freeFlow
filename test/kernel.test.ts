@@ -181,12 +181,20 @@ describe('case 3: repeated task', () => {
 
   const weekly: GraphDef = {
     id: 'review',
-    nodes: [start, wait('monday', { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=7', tz: 'Asia/Kolkata' }), task('review'), end('done')],
+    nodes: [
+      start,
+      wait('monday', { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=7', tz: 'Asia/Kolkata' }),
+      task('review'),
+      join('last'),
+      end('done'),
+    ],
     links: [
       link('start', 'monday', 'done'),
       link('monday', 'monday', 'elapsed'),
       link('monday', 'review', 'elapsed'),
-      link('monday', 'done', 'exhausted'),
+      link('monday', 'last', 'exhausted'),
+      link('review', 'last', '*'),
+      link('last', 'done', 'done'),
     ],
   };
 
@@ -208,12 +216,26 @@ describe('case 3: repeated task', () => {
     expect(d.status('review')).toBe('active');
   });
 
-  it('ends when the rrule is exhausted, aborting an open review', () => {
+  it('once the rrule is exhausted, ends after the last review rather than aborting it', () => {
     const d = drive(weekly);
     d.wake('monday');
+    d.outcome('review'); // week 1 done: its arrival at the join is recorded
+    d.wake('monday'); // week 2 starts: review runs again and withdraws that arrival
+    expect(d.graph.runtime.last!.arrived).toBeUndefined();
     const r = d.wake('monday', { exhausted: true });
-    expect(r.effects).toContainEqual({ kind: 'aborted', node: 'review' });
-    expect(endedWith(r.effects)).toEqual({ kind: 'ended', result: 'done' });
+    expect(r.effects).not.toContainEqual({ kind: 'aborted', node: 'review' });
+    expect(d.graph.runtime.last!.arrived).toEqual(['monday']);
+    expect(d.graph.status).toBe('running');
+    d.outcome('review');
+    expect(d.graph.result).toBe('done');
+  });
+
+  it('ends at once when the rrule runs out with no review open', () => {
+    const d = drive(weekly);
+    d.wake('monday');
+    d.outcome('review');
+    d.wake('monday', { exhausted: true });
+    expect(d.graph.result).toBe('done');
   });
 
   it('rejects exhausted on a wait without an rrule', () => {
@@ -277,6 +299,18 @@ describe('case 4: task with sub-tasks', () => {
     d.outcome('hotel');
     const r = d.send({ kind: 'removeNode', id: 'pack' });
     expect(r.effects).toContainEqual({ kind: 'aborted', node: 'pack' });
+    expect(d.graph.result).toBe('done');
+  });
+
+  it('counts only the latest result of a source that runs again', () => {
+    const d = drive(trip);
+    d.outcome('ticket');
+    expect(d.graph.runtime.ready!.arrived).toEqual(['ticket']);
+    d.send({ kind: 'activate', id: 'ticket' }); // reopened: the earlier arrival no longer counts
+    d.outcome('hotel');
+    d.outcome('pack');
+    expect(d.graph.status).toBe('running');
+    d.outcome('ticket');
     expect(d.graph.result).toBe('done');
   });
 

@@ -255,6 +255,7 @@ class Run {
     rt.state = { status: 'active', raised: [] };
     rt.runs++;
     delete rt.arrived;
+    this.withdraw(id);
 
     if (isInstant(node)) {
       this.queue.push(id);
@@ -313,6 +314,17 @@ class Run {
     rt.arrived = arrived;
     const needed = node.need === 'all' ? sources.length : node.need.atLeast;
     if (arrived.length >= needed) this.activate(id);
+  }
+
+  /** A source that runs again takes back its earlier arrival: joins count each source's latest result. */
+  private withdraw(id: NodeId): void {
+    for (const link of Object.values(this.g.links)) {
+      if (link.from !== id || this.g.nodes[link.to]?.kind !== 'join') continue;
+      const rt = this.rt(link.to);
+      if (!rt.arrived) continue;
+      rt.arrived = rt.arrived.filter((s) => s !== id);
+      if (rt.arrived.length === 0) delete rt.arrived;
+    }
   }
 
   private recheckJoins(): void {
