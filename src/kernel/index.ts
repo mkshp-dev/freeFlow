@@ -1,3 +1,3 @@
 export * from './types';
-export { defineTemplate, lintTemplate, TemplateError } from './template';
-export { instantiate, step } from './instance';
+export { create, step } from './graph';
+export { checkGraph, lintGraph, GraphError } from './validate';
